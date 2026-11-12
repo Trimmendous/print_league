@@ -19,7 +19,7 @@
    });
    if (!(response.headers.get('content-type') || '').includes('application/json')) throw Error('The league API is not available yet. Please try again later.');
    const data = await response.json();
-   if (!response.ok) { if(config && response.status===401) sessionToken=null; throw Error(data.error || 'Request failed'); }
+   if (!response.ok) { if(config && response.status===401) sessionToken=null; const error=Error(data.error || 'Request failed');error.code=data.code;throw error; }
    if (config && typeof data.session_token === 'string') sessionToken = data.session_token;
    if (path === 'auth/logout') sessionToken = null;
    return data;

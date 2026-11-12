@@ -58,6 +58,11 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
    if(/^entries\/\d+\/file$/.test(path))throw new APIError(403,'Project file uploads are disabled. Share a model link instead.');
    if(path==='profile/avatar'){if(!sessionHash)throw new APIError(401,'Please sign in again.');if(!photos)throw new APIError(503,'Photo uploads are unavailable.');await limit('photo:'+sessionHash);return reply(await photos.upload(request,sessionHash));}
    const body=await jsonBody(request);
+   if(path==='auth/invitation') {
+    if(!googleRPC)throw new APIError(503,'Invitation checks are unavailable.');
+    const invite=field(body,'invite',160);await limit('invitation:'+await digest(invite));
+    return reply(await googleRPC('invitation',{invite_hash:await digest(invite)},''));
+   }
    if(path==='auth/google/challenge'||path==='auth/google') {
     if(!google||!googleRPC)throw new APIError(503,'Google sign-in is not configured yet.');
     await limit('google:'+String(body.challenge||sessionHash||body.invite||'login'));
@@ -78,7 +83,10 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
      registration.normalized=normalize(registration.name);
     }
     const sessionToken=token();
-    await googleRPC('complete',{...registration,challenge_hash:await digest(challenge),nonce_hash:await digest(identity.nonce),subject:identity.subject,token_hash:await digest(sessionToken)},sessionHash);
+    try{await googleRPC('complete',{...registration,challenge_hash:await digest(challenge),nonce_hash:await digest(identity.nonce),subject:identity.subject,token_hash:await digest(sessionToken)},sessionHash);}catch(error){
+     if(error instanceof APIError&&error.message.startsWith('This Google account is not linked.'))return reply({code:'google_account_unlinked',error:'This Google account has not joined Print League yet. Enter an invitation in Join to create an account. Already a member? Sign in with your username and link Google from your profile.'},403);
+     throw error;
+    }
     return reply({ok:true,session_token:sessionToken});
    }
    if(path==='auth/reset-password') {

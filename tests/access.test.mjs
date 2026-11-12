@@ -131,3 +131,18 @@ test('Google buttons can complete invite signup with chosen or Gmail-generated u
   assert.equal((await c.request('profile/credentials',{name:'maker_1',password:'abcdef',confirm_password:'abcdef'})).status,200);
  }finally{await f.db.close();}
 });
+test('invitation entry validates without consuming and rejects used or expired codes',async()=>{
+ const f=await fixture(),handle=createHandler(f),guest=client(handle);
+ try{
+  assert.equal((await guest.request('auth/invitation',{invite:'bad'})).status,403);
+  const invite=await f.invitation();
+  let out=await guest.request('auth/invitation',{invite});assert.equal(out.status,200);assert.equal(out.google_allowed,true);
+  assert.equal((await guest.request('auth/invitation',{invite})).status,200);
+  assert.equal((await guest.request('auth/register',{name:'newmaker',invite,password:'abcdef',confirm_password:'abcdef'})).status,200);
+  assert.equal((await guest.request('auth/invitation',{invite})).status,403);
+  const expired=await f.invitation();await f.db.query("update league_private.invites set created_at=now()-interval '2 days',expires_at=now()-interval '1 day' where token_hash=$1",[await digest(expired)]);
+  assert.equal((await guest.request('auth/invitation',{invite:expired})).status,403);
+  const setup=await f.invitation();await f.db.query('update league_private.invites set grants_admin=true where token_hash=$1',[await digest(setup)]);
+  out=await guest.request('auth/invitation',{invite:setup});assert.equal(out.status,200);assert.equal(out.google_allowed,false);
+ }finally{await f.db.close();}
+});

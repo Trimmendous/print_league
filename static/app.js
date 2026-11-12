@@ -1,4 +1,5 @@
 let s;
+let joinState={code:'',verified:false,googleAllowed:true,method:'password'},lastInviteLink='',inviteRequest=0;
 let serverOffset=0, archivePage=0;
 const root=document.querySelector('#app');
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -32,7 +33,7 @@ function tickClocks(){
   el.textContent=seconds?`${Math.floor(seconds/86400)}d ${Math.floor(seconds/3600)%24}h ${Math.floor(seconds/60)%60}m ${seconds%60}s`:'Updating phase…';
  });
 }
-function organizer(){return `<details class="card organizer"><summary>⚓ Organizer workbench</summary>${form('rounds',`<label>Competition name<input name="title" maxlength="160" required></label><label>Final printing deadline<input name="deadline" type="datetime-local" required><small>The overall competition ends at this time. This is separate from topic submission and topic voting.</small></label><label class="check-label"><input name="prevote" type="checkbox" value="on"> Start with a topic-submission period</label><label class="prevote-time" hidden>Topic submissions close / topic voting opens (optional)<input name="vote_opens_at" type="datetime-local" disabled><small>Topic submissions start when you create the competition. At this time, suggestions close and voting on those topics begins. Leave blank to start voting manually.</small></label><label>Topic voting closes / printing starts (optional)<input name="votes_close_at" type="datetime-local"><small>Voting on the suggested topics ends and the selected topic moves into printing (ties need a decision). Leave blank to close topic voting manually; it cannot run past the final printing deadline.</small></label><p class="form-hint">All times use your local timezone. Enable a topic-submission period to collect suggestions before voting. Otherwise, topic suggestions and voting both open immediately. These voting dates choose what to print; they are not voting dates for finished prints.</p><button>Create competition</button>`)}${form('invites',btn('Generate invitation'))}<p id="invite" role="status"></p></details>`;}
+function organizer(){return `<details class="card organizer"><summary>⚓ Organizer workbench</summary>${form('rounds',`<label>Competition name<input name="title" maxlength="160" required></label><label>Final printing deadline<input name="deadline" type="datetime-local" required><small>The overall competition ends at this time. This is separate from topic submission and topic voting.</small></label><label class="check-label"><input name="prevote" type="checkbox" value="on"> Start with a topic-submission period</label><label class="prevote-time" hidden>Topic submissions close / topic voting opens (optional)<input name="vote_opens_at" type="datetime-local" disabled><small>Topic submissions start when you create the competition. At this time, suggestions close and voting on those topics begins. Leave blank to start voting manually.</small></label><label>Topic voting closes / printing starts (optional)<input name="votes_close_at" type="datetime-local"><small>Voting on the suggested topics ends and the selected topic moves into printing (ties need a decision). Leave blank to close topic voting manually; it cannot run past the final printing deadline.</small></label><p class="form-hint">All times use your local timezone. Enable a topic-submission period to collect suggestions before voting. Otherwise, topic suggestions and voting both open immediately. These voting dates choose what to print; they are not voting dates for finished prints.</p><button>Create competition</button>`)}</details>`;}
 function winnersPage(){
  const past=s.rounds.filter(r=>r.phase==='completed').reverse(),pages=Math.max(1,Math.ceil(past.length/6));archivePage=Math.min(archivePage,pages-1);
  return `<div class="section-heading"><div><p class="eyebrow">A LITTLE WELL-EARNED GLORY</p><h1 class="page-title">Winners</h1></div><div class="winners-emblem">${trophyImage}</div></div><div class="crew-shelf">${[...s.users].sort((a,b)=>winsFor(b.id).length-winsFor(a.id).length).filter(u=>winsFor(u.id).length).map(u=>`<article class="crew-card"><div class="crew-identity">${avatar(u)}<h3>${name(u.id)}</h3></div>${tally(u.id)}</article>`).join('')||'<p class="muted">The first trophy is waiting for its captain.</p>'}</div><h2>Completed competitions</h2><div class="grid">${past.slice(archivePage*6,archivePage*6+6).map(round).join('')||'<div class="empty-state"><span>⚓</span><h3>A new fleet, a fresh start.</h3><p>Completed competitions and their winners will dock here.</p></div>'}</div>${pages>1?`<nav class="pagination" aria-label="Completed competitions"><button type="button" data-page="${archivePage-1}" ${archivePage===0?'disabled':''}>← Newer</button><span>Page ${archivePage+1} of ${pages}</span><button type="button" data-page="${archivePage+1}" ${archivePage===pages-1?'disabled':''}>Older →</button></nav>`:''}`;
@@ -68,17 +69,31 @@ function printLinks(r, mine){
 }
 
 function joinInvite(){try{return location.hash.startsWith('#join=')?decodeURIComponent(location.hash.slice(6)):'';}catch{return '';}}
+function invitationPanel(){return `<section class="card invitation-panel"><div><p class="eyebrow">GROW YOUR CREW</p><h2>Invite a member</h2><p>One code, one new member. Invitations expire after seven days.</p></div>${form('invites',btn('Generate invitation'))}<p id="invite" role="status"></p><div id="invite-share" hidden><label>Invitation code<input id="invite-code" readonly autocomplete="off"></label><button type="button" data-copy-invite="invite-code">Copy code</button><label>Signup link<input id="invite-link" readonly autocomplete="off"></label><button type="button" id="copy-invite" data-copy-invite="invite-link">Copy signup link</button><small>The link fills in the invitation and opens account creation.</small></div></section>`;}
+function passwordSignup(){return form('auth/register',`<input type="hidden" name="invite" value="${esc(joinState.code)}"><label>Choose a username<input name="name" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Your public name in the league.</small></label><label>Password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" placeholder="At least 6 characters" required></label><label>Confirm password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>Create account</button>`);}
+function joinPanel(){
+ const google=!!s.capabilities?.google_client_id&&joinState.googleAllowed;
+ return `<section class="card auth-panel" id="join-panel" aria-labelledby="join-heading"><p class="eyebrow">NEW TO THE CREW?</p><h2 id="join-heading">Join with an invitation</h2><p>Enter your invitation first, then choose how to create your account.</p>${!joinState.verified?`<form data-invite-gate><label>Invitation code *<input name="invite" value="${esc(joinState.code)}" autocomplete="off" maxlength="160" required></label><button>Continue with invitation</button><p id="invite-feedback" role="status"></p></form><small>* Required for every new account, including Google signup.</small>`:`<div class="invite-accepted" role="status"><span>✓ Invitation accepted</span><button type="button" class="quiet-button" data-change-invite>Change code</button></div><h3>Choose how to join</h3>${google?`<div class="signup-methods" role="group" aria-label="Create account with"><button type="button" data-join-method="password" aria-pressed="${joinState.method==='password'}">Username & password</button><button type="button" data-join-method="google" aria-pressed="${joinState.method==='google'}">Google</button></div>`:''}${google&&joinState.method==='google'?googleForm('register'):passwordSignup()}<small>* This invitation is used only when your account is created.</small>`}</section>`;
+}
+function authPage(){return `<div class="auth-heading"><p class="eyebrow">WELCOME TO PRINT LEAGUE</p><h1>Your next print starts here.</h1></div><div class="auth-columns ${location.hash==='#join'||joinInvite()?'joining':''}"><section class="card auth-panel" id="signin-panel" aria-labelledby="signin-heading"><p class="eyebrow">ALREADY A MEMBER?</p><h2 id="signin-heading">Sign in</h2><p>Use the sign-in method connected to your account.</p>${form('auth/login','<label>Username<input name="name" autocomplete="username" required></label><label>Password<input name="password" type="password" autocomplete="current-password" required></label><button>Sign in</button>')}${s.capabilities?.google_client_id?'<div class="auth-divider">or</div>'+googleForm('login'):''}<div id="signin-feedback" role="status"></div><details class="account-help"><summary>Need help signing in?</summary><p>Created your account with a password? Sign in above, then link Google from Settings → Profile.</p>${temporaryPasswordForm()}${s.capabilities?.recovery?`<details class="join"><summary>Recover your account</summary>${form('auth/recover','<label>Username<input name="name" autocomplete="username" required></label><label>Recovery code<input name="recovery_code" autocomplete="off" required></label><label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>Reset password</button>')}</details>`:''}</details></section>${joinPanel()}</div>`;}
+async function checkInvitation(code){
+ const request=++inviteRequest;joinState.code=code.trim();
+ const status=document.querySelector('#invite-feedback');if(status)status.textContent='Checking invitation…';
+ try{const out=await post('auth/invitation',{invite:joinState.code});if(request!==inviteRequest||s.user)return;
+  joinState.verified=true;joinState.googleAllowed=out.google_allowed;render();document.querySelector('#join-heading')?.scrollIntoView({block:'nearest',behavior:'smooth'});
+ }catch(error){if(request!==inviteRequest)return;const target=document.querySelector('#invite-feedback');if(target)target.textContent=error.message;}
+}
 function adminPage(){
  const admin=s.admin;
  if(!admin)return '<section class="card"><h1>Admin</h1><p>Loading members…</p></section>';
  const members=admin.members||[];
- return `<div class="section-heading"><div><p class="eyebrow">ORGANIZER CONTROLS</p><h1 class="page-title">Admin</h1></div></div><div class="admin-stats"><section class="card"><strong>${admin.member_count}</strong><span>Members</span></section><section class="card"><strong>${admin.admin_count}</strong><span>Admins</span></section><section class="card"><strong>${admin.pending_invites}</strong><span>Unused invitations</span></section></div><section class="card"><h2>Invite someone aboard</h2><p>Each invitation works once and expires after seven days.</p>${form('invites',btn('Create invitation'))}<p id="invite" role="status"></p><div id="invite-share" hidden><label>Signup link<input id="invite-link" readonly></label><button type="button" id="copy-invite">Copy invite link</button></div></section><section class="card"><h2>Crew members</h2><div id="temporary-password" hidden role="status"></div><p>Admins can manage competitions, invitations, and member access.</p>${members.map(u=>`<div class="row"><div><strong>${esc(u.display_name||u.name||'Member')}</strong><small class="member-detail">${u.name?'@'+esc(u.name):'Google account'} · ${u.admin?'Admin':'Member'}</small></div><div class="admin-member-actions">${form(u.admin?'admin/demote':'admin/promote',`<input type="hidden" name="member_id" value="${u.id}"><button>${u.admin?'Remove admin':'Make admin'}</button>`)}${u.has_password&&u.id!==s.user.id?form('admin/reset-password',`<input type="hidden" name="member_id" value="${u.id}"><button>Reset password</button>`):''}</div></div>`).join('')}</section>`;
+ return `<div class="section-heading"><div><p class="eyebrow">ORGANIZER CONTROLS</p><h1 class="page-title">Admin</h1></div></div><div class="admin-stats"><section class="card"><strong>${admin.member_count}</strong><span>Members</span></section><section class="card"><strong>${admin.admin_count}</strong><span>Admins</span></section><section class="card"><strong>${admin.pending_invites}</strong><span>Unused invitations</span></section></div>${invitationPanel()}<section class="card"><h2>Crew members</h2><div id="temporary-password" hidden role="status"></div><p>Admins can manage competitions, invitations, and member access.</p>${members.map(u=>`<div class="row"><div><strong>${esc(u.display_name||u.name||'Member')}</strong><small class="member-detail">${u.name?'@'+esc(u.name):'Google account'} · ${u.admin?'Admin':'Member'}</small></div><div class="admin-member-actions">${form(u.admin?'admin/demote':'admin/promote',`<input type="hidden" name="member_id" value="${u.id}"><button>${u.admin?'Remove admin':'Make admin'}</button>`)}${u.has_password&&u.id!==s.user.id?form('admin/reset-password',`<input type="hidden" name="member_id" value="${u.id}"><button>Reset password</button>`):''}</div></div>`).join('')}</section>`;
 }
 function temporaryPasswordForm(){return `<details class="join"><summary>Have a temporary password from an admin?</summary>${form('auth/reset-password','<label>Username<input name="name" autocomplete="username" required></label><label>Temporary password<input name="temporary_password" type="password" autocomplete="off" required></label><label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>Set new password</button>')}</details>`;}
 function googleForm(mode){
  if(!s.capabilities?.google_client_id)return '';
- const fields=mode==='register'?'<label>Username preference<select name="username_mode"><option value="custom">Choose my own username</option><option value="gmail">Generate from my Gmail name</option></select></label><label data-google-username>Choose a username<input name="name" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label><p class="muted">Your username is public. Gmail generation uses the part before @gmail.com and adds a number if needed. Your full email stays private.</p><label>Invitation code *<input name="invite" autocomplete="off" required></label><small data-google-required>Enter your invitation and username choice to enable Google signup.</small>':'';
- return `<form data-google="${mode}" class="google-signin">${fields}<div data-google-button ${mode==='register'?'hidden':''}></div><small>${mode==='link'?'Link Google to your current membership.':'* An invitation code is required to create an account, including with Google. Existing members can sign in without another code.'}</small></form>`;
+ const fields=mode==='register'?`<input type="hidden" name="invite" value="${esc(joinState.code)}"><label>Username (optional)<input name="name" maxlength="40" autocomplete="username" data-check-username><small class="username-status" aria-live="polite">Leave blank to generate from your Gmail name.</small></label><p class="muted">Your username will be public. Leaving it blank uses the part before @gmail.com, adding a number if needed. Your full email stays private.</p><small data-google-required hidden>Choose an available username to continue.</small>`:'';
+ return `<form data-google="${mode}" class="google-signin">${fields}<div data-google-button></div>${mode==='login'?'<small>For members who already joined or linked Google. New here? <a href="#join">Join with an invitation.</a></small>':mode==='register'?'<small>* Your invitation is required even when joining with Google.</small>':'<small>Connect Google to this existing membership.</small>'}</form>`;
 }
 function googleProfile(){
  if(!s.capabilities?.google_client_id)return '';
@@ -90,34 +105,44 @@ function loadGoogle(){
  if(!googleLibrary)googleLibrary=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;script.onload=resolve;script.onerror=()=>{googleLibrary=null;script.remove();reject(Error('Google sign-in could not load. Please try again.'));};document.head.appendChild(script);});
  return googleLibrary;
 }
-let googleGeneration=0,googleRefresh;
+let googleGeneration=0,googleRefresh,googleChallenge;
 async function hydrateGoogle(){
  const generation=++googleGeneration;clearTimeout(googleRefresh);
  if(!s.capabilities?.google_client_id)return;
  const forms=[...root.querySelectorAll('[data-google]')];if(!forms.length)return;
  try{
   await loadGoogle();if(generation!==googleGeneration)return;
-  const challenge=await post('auth/google/challenge',{mode:s.user?'link':'login'});
+  const key=s.user?'link:'+s.user.id:'login';
+  if(!googleChallenge||googleChallenge.key!==key||googleChallenge.until<Date.now())googleChallenge={key,until:Date.now()+230000,pending:post('auth/google/challenge',{mode:s.user?'link':'login'})};
+  const challenge=await googleChallenge.pending;
   if(generation!==googleGeneration||!forms[0].isConnected)return;
   window.google.accounts.id.initialize({client_id:challenge.client_id,nonce:challenge.nonce,auto_select:false,ux_mode:'popup',use_fedcm_for_button:true,callback:async response=>{
    const f=forms.find(form=>form.dataset.google===response.state);if(!f||!f.isConnected||!f.reportValidity())return;
-   const body=Object.fromEntries(new FormData(f));body.mode=f.dataset.google;
-   try{await post('auth/google',{...body,challenge:challenge.challenge,credential:response.credential});if(body.mode!=='link')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
-   catch(error){document.querySelector('#message').textContent=error.message;void hydrateGoogle();}
+   const body=Object.fromEntries(new FormData(f));body.mode=f.dataset.google;if(body.mode==='register')body.username_mode=body.name?.trim()?'custom':'gmail';
+   try{await post('auth/google',{...body,challenge:challenge.challenge,credential:response.credential});googleChallenge=null;if(body.mode!=='link')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
+   catch(error){
+    const feedback=body.mode==='login'?document.querySelector('#signin-feedback'):document.querySelector('#message');
+    feedback.textContent=error.message;
+    if(error.code==='google_account_unlinked'){const link=document.createElement('a');link.href='#join';link.textContent='Join with an invitation →';feedback.append(document.createElement('br'),link);}
+    void hydrateGoogle();
+   }
   }});
   forms.forEach(f=>{const slot=f.querySelector('[data-google-button]');slot.replaceChildren();window.google.accounts.id.renderButton(slot,{type:'standard',theme:'outline',size:'large',width:280,text:f.dataset.google==='register'?'signup_with':'signin_with',state:f.dataset.google});});
   googleRefresh=setTimeout(()=>{if(forms[0].isConnected)void hydrateGoogle();},240000);
- }catch(error){if(generation===googleGeneration)document.querySelector('#message').textContent=error.message;}
+ }catch(error){googleChallenge=null;if(generation===googleGeneration)document.querySelector('#message').textContent=error.message;}
 }
 function updateGoogleSignup(f){
  if(f?.dataset.google!=='register')return;
- const custom=f.elements.username_mode.value==='custom',name=f.elements.name;
- name.required=custom;name.disabled=!custom;name.closest('label').hidden=!custom;
  const ready=f.checkValidity();f.querySelector('[data-google-button]').hidden=!ready;f.querySelector('[data-google-required]').hidden=ready;
 }
 root.addEventListener('input',e=>updateGoogleSignup(e.target.form));
 root.addEventListener('change',e=>updateGoogleSignup(e.target.form));
-root.addEventListener('click',async e=>{if(e.target.id==='copy-invite'){const field=document.querySelector('#invite-link');try{await navigator.clipboard.writeText(field.value);document.querySelector('#message').textContent='Invitation link copied.';}catch{field.select();document.querySelector('#message').textContent='Copy the selected invitation link.';}}});
+root.addEventListener('click',async e=>{
+ const copy=e.target.closest('[data-copy-invite]');
+ if(copy){const field=document.getElementById(copy.dataset.copyInvite);try{await navigator.clipboard.writeText(field.value);document.querySelector('#message').textContent=copy.dataset.copyInvite==='invite-code'?'Invitation code copied.':'Signup link copied.';}catch{field.select();document.querySelector('#message').textContent='Copy the selected invitation.';}return;}
+ const method=e.target.closest('[data-join-method]');if(method){joinState.method=method.dataset.joinMethod;render();return;}
+ if(e.target.closest('[data-change-invite]')){++inviteRequest;joinState.verified=false;render();document.querySelector('[data-invite-gate] input')?.focus();}
+});
 
 const avatarBlobs=new Map();
 async function hydrateAvatars(){
@@ -132,8 +157,13 @@ async function hydrateAvatars(){
  const valid=new Set((s.users||[]).filter(u=>u.avatar).map(u=>u.id+':'+u.avatar));
  for(const [key,entry] of avatarBlobs)if(!valid.has(key)){if(entry.url)URL.revokeObjectURL(entry.url);avatarBlobs.delete(key);}
 }
-function render(){renderContent();void hydrateAvatars();void hydrateGoogle();const invite=joinInvite();if(!s.user&&invite)document.querySelectorAll('input[name=invite]').forEach(input=>{input.value=invite;const details=input.closest('details');if(details)details.open=true;updateGoogleSignup(input.form);});}
+function render(){
+ renderContent();void hydrateAvatars();void hydrateGoogle();
+ const invite=joinInvite();if(!s.user&&invite&&invite!==lastInviteLink){lastInviteLink=invite;joinState.code=invite;const input=document.querySelector('[data-invite-gate] input');if(input)input.value=invite;void checkInvitation(invite);}
+ if(!s.user&&(location.hash==='#join'||invite))document.querySelector('#join-heading')?.scrollIntoView?.({block:'nearest'});
+}
 function renderContent(){
+ document.body?.classList.toggle('signed-out',!s.user);
  document.querySelector('#settings').hidden=!s.user;
  document.querySelector('#admin-link').hidden=!s.user?.admin||!s.capabilities?.admin_management;
  const username=document.querySelector('#header-username');
@@ -146,15 +176,15 @@ function renderContent(){
  document.querySelector('#tab-changelog').setAttribute('aria-current',location.hash==='#changelog'?'page':'false');
  document.querySelector('#tab-credits').setAttribute('aria-current',location.hash==='#credits'?'page':'false');
  const isProfile=s.user&&location.hash==='#profile';
- document.querySelector('#intro').hidden=!!s.user;
- if(!s.user){root.innerHTML=`<section class="card auth"><div><p class="eyebrow">WELCOME ABOARD</p><h2>Join your crew.</h2><p class="muted">An invitation gets you aboard.<br>Your next print makes a splash.</p></div><div>${form('auth/login','<label>Username<input name="name" placeholder="Your username" autocomplete="username" required></label><label>Password<input name="password" type="password" placeholder="Your password" autocomplete="current-password" required></label>'+btn('Sign in →'))}${googleForm('login')}${temporaryPasswordForm()}<details class="join"><summary>Have an invitation? Join the fleet</summary>${googleForm('register')}${form('auth/register','<label>Choose a username<input name="name" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label><label>Password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" placeholder="At least 6 characters" required></label><label>Confirm password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Invitation code<input name="invite" autocomplete="off" required></label>'+btn('Create account'))}</details>${s.capabilities?.recovery?`<details class="join"><summary>Recover your account</summary>${form('auth/recover','<label>Username<input name="name" autocomplete="username" required></label><label>Recovery code<input name="recovery_code" autocomplete="off" required></label><label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>Reset password</button>')}</details>`:''}</div></section>`;return;}
+ document.querySelector('#intro').hidden=true;
+ if(!s.user){root.innerHTML=authPage();return;}
  if(isProfile){root.innerHTML=profile()+googleProfile()+recoveryPanel();return;}
  if(location.hash==='#admin'){root.innerHTML=s.user.admin?adminPage():'<section class="card"><h1>Administrator access required</h1></section>';return;}
  if(location.hash==='#credits'){root.innerHTML=creditsPage();return;}
  if(location.hash==='#features'){root.innerHTML=featuresPage();return;}
  if(location.hash==='#changelog'){root.innerHTML=changelogPage();return;}
  if(location.hash==='#winners'){root.innerHTML=winnersPage();return;}
- root.innerHTML=`<div class="welcome"><div><p class="eyebrow">GOOD TO HAVE YOU ABOARD</p><h1 class="page-title">On the workbench</h1><p class="muted">Pick a topic, cast your vote, and make something worth sharing.</p></div></div>${s.user.admin?organizer():''}<div class="grid">${s.rounds.filter(r=>r.phase!=='completed').map(round).join('')||'<div class="empty-state"><span>≈</span><h3>Calm seas. Fresh possibilities.</h3><p>The next challenge starts when your organizer creates a competition.</p></div>'}</div>`;
+ root.innerHTML=`<div class="welcome"><div><p class="eyebrow">GOOD TO HAVE YOU ABOARD</p><h1 class="page-title">On the workbench</h1><p class="muted">Pick a topic, cast your vote, and make something worth sharing.</p></div></div>${s.user.admin?invitationPanel()+organizer():''}<div class="grid">${s.rounds.filter(r=>r.phase!=='completed').map(round).join('')||'<div class="empty-state"><span>≈</span><h3>Calm seas. Fresh possibilities.</h3><p>The next challenge starts when your organizer creates a competition.</p></div>'}</div>`;
  tickClocks();
 }
 
@@ -197,6 +227,7 @@ function round(r){
 root.addEventListener('submit',async e=>{
  e.preventDefault();const f=e.target,b=e.submitter||f.querySelector('button:not([type="button"])');if(f.dataset.google)return;b.disabled=true;
  try{
+  if(f.hasAttribute('data-invite-gate')){await checkInvitation(f.elements.invite.value);return;}
   if(f.dataset.google)return;
   const d=new FormData(f);
   f.querySelectorAll('input[type="datetime-local"]').forEach(field=>{if(field.value&&!field.disabled)d.set(field.name,new Date(field.value).toISOString());});
@@ -206,7 +237,7 @@ root.addEventListener('submit',async e=>{
   await load();document.querySelector('#message').textContent='Saved.';
   if(f.dataset.path==='auth/reset-password')document.querySelector('#message').textContent='Password changed. Sign in with your new password.';
   if(out.temporary_password){const target=document.querySelector('#temporary-password');target.hidden=false;target.replaceChildren();const note=document.createElement('p');note.textContent='Temporary password for member #'+d.get('member_id')+'. Copy and share privately. It works once and expires in 24 hours. On the sign-in page, choose “Have a temporary password from an admin?” to set a new password.';const field=document.createElement('input');field.readOnly=true;field.value=out.temporary_password;field.setAttribute('aria-label','Temporary password');target.append(note,field);}
-  if(out.code){document.querySelector('#invite').textContent='Single-use invitation: '+out.code;const link=document.querySelector('#invite-link');if(link){link.value=location.origin+(window.LEAGUE_CONFIG?.basePath||'/')+'#join='+encodeURIComponent(out.code);document.querySelector('#invite-share').hidden=false;}}
+  if(out.code){document.querySelector('#invite').textContent='Invitation ready. Copy the code or signup link below.';document.querySelector('#invite-code').value=out.code;const link=document.querySelector('#invite-link');if(link){link.value=location.origin+(window.LEAGUE_CONFIG?.basePath||'/')+'#join='+encodeURIComponent(out.code);document.querySelector('#invite-share').hidden=false;}}
   if(out.recovery_codes){const target=document.querySelector('#recovery-codes');target.hidden=false;target.textContent=out.recovery_codes.join('\n');document.querySelector('#message').textContent='Save these recovery codes privately. Each works once.';}
  }catch(err){document.querySelector('#message').textContent=err.message;}finally{b.disabled=false;}
 });
@@ -222,7 +253,7 @@ root.addEventListener('change',e=>{
   const field=e.target.form.elements.vote_opens_at;field.disabled=!e.target.checked;field.closest('label').hidden=!e.target.checked;if(!e.target.checked)field.value='';
  }
 });
-document.querySelector('#logout').onclick=async()=>{try{await post('auth/logout',{});document.querySelector('#settings').open=false;location.hash='';await load();document.querySelector('#message').textContent='Signed out.';}catch(err){document.querySelector('#message').textContent=err.message;}};
+document.querySelector('#logout').onclick=async()=>{try{await post('auth/logout',{});joinState={code:'',verified:false,googleAllowed:true,method:'password'};lastInviteLink='';document.querySelector('#settings').open=false;location.hash='';await load();document.querySelector('#message').textContent='Signed out.';}catch(err){document.querySelector('#message').textContent=err.message;}};
 window.addEventListener('hashchange',()=>{document.querySelector('#settings').open=false;document.querySelector('#message').textContent='';if(s){if(location.hash==='#admin')load().catch(e=>document.querySelector('#message').textContent=e.message);else render();}});
 document.addEventListener('click',e=>{if(!e.target.closest('#settings'))document.querySelector('#settings').open=false;});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelector('#settings').open=false;document.querySelector('#settings summary').focus();}});
@@ -235,13 +266,13 @@ root.addEventListener('input',e=>{
  }
  if(!e.target.matches('[data-check-username]'))return;
  const field=e.target,status=field.parentElement.querySelector('.username-status'),value=field.value.trim();
- clearTimeout(availabilityTimer);field.setCustomValidity('');status.textContent=value?'Checking availability…':'Enter a username.';
+ clearTimeout(availabilityTimer);field.setCustomValidity('');status.textContent=value?'Checking availability…':field.required?'Enter a username.':'Leave blank to generate from your Gmail name.';updateGoogleSignup(field.form);
  if(!value)return;
  availabilityTimer=setTimeout(async()=>{try{
   const out=await window.leagueAPI.request('username-availability?name='+encodeURIComponent(value));
   if(!field.isConnected||field.value.trim()!==value)return;
   status.textContent=out.available?'This username is available.':'That username is already taken (including capitalization variants).';
-  field.setCustomValidity(out.available?'':'That username is already taken.');
+  field.setCustomValidity(out.available?'':'That username is already taken.');updateGoogleSignup(field.form);
  }catch(err){if(field.isConnected&&field.value.trim()===value)status.textContent='Availability will be checked when you save.';}},300);
 });
 load().catch(e=>document.querySelector('#message').textContent=e.message);

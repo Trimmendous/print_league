@@ -1,0 +1,48 @@
+// Optional browser integration: uses isolated PostgreSQL and signed Google test tokens.
+import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
+import * as jose from 'jose';
+import {testDatabase} from './helpers/database.mjs';
+import {createHandler} from '../supabase/functions/league-api/handler.mjs';
+import {googleVerifier} from '../supabase/functions/_shared/google.mjs';
+import {token,digest} from '../supabase/functions/_shared/passwords.mjs';
+const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
+const f=await testDatabase(),{privateKey,publicKey}=await jose.generateKeyPair('RS256'),clientID='fixture.apps.googleusercontent.com';
+const handle=createHandler({...f,google:googleVerifier(clientID,jose,publicKey)});
+const browser=await chromium.launch({headless:true});
+try{
+ const invite=token(),adminInvite=token();
+ for(const [value,admin] of [[invite,false],[adminInvite,true]])await f.db.query("insert into league_private.invites(token_hash,expires_at,grants_admin) values($1,now()+interval '1 day',$2)",[await digest(value),admin]);
+ const context=await browser.newContext({viewport:{width:1280,height:900},permissions:['clipboard-read','clipboard-write']});
+ await context.exposeFunction('testGoogleCredential',nonce=>new jose.SignJWT({nonce,sub:'browser-google-subject',email:'browsermaker@gmail.com',email_verified:true}).setProtectedHeader({alg:'RS256'}).setIssuer('https://accounts.google.com').setAudience(clientID).setIssuedAt().setExpirationTime('5m').sign(privateKey));
+ await context.addInitScript(()=>{let config;window.google={accounts:{id:{initialize(c){config=c;},renderButton(slot,options){const button=document.createElement('button');button.type='button';button.textContent=options.text==='signup_with'?'Sign up with Google':'Sign in with Google';button.onclick=async()=>config.callback({state:options.state,credential:await window.testGoogleCredential(config.nonce)});slot.append(button);}}}};});
+ await context.route('https://trimmendous.github.io/**',async route=>{const path=new URL(route.request().url()).pathname.replace(/^\/print_league\//,'')||'index.html';const types={js:'text/javascript',css:'text/css',html:'text/html',svg:'image/svg+xml',png:'image/png',webp:'image/webp'};try{await route.fulfill({body:await readFile('dist/'+path),contentType:types[path.split('.').pop()]});}catch{await route.fulfill({status:404,body:'Missing'});}});
+ await context.route('https://narfsxgtbvfvvxwdusss.supabase.co/**',async route=>{const req=route.request(),response=await handle(new Request(req.url(),{method:req.method(),headers:req.headers(),body:req.method()==='POST'?req.postData():undefined}));await route.fulfill({status:response.status,headers:Object.fromEntries(response.headers),body:await response.text()});});
+ const errors=[],page=await context.newPage();page.on('pageerror',e=>errors.push(e.message));
+ const site='https://trimmendous.github.io/print_league/';await page.goto(site);
+ await page.getByRole('heading',{name:'Join with an invitation'}).waitFor();
+ if(process.env.ENTRY_SCREENSHOTS)await page.screenshot({path:process.env.ENTRY_SCREENSHOTS+'/entry-desktop.png',fullPage:true});
+ const left=await page.locator('#signin-panel').boundingBox(),right=await page.locator('#join-panel').boundingBox();assert(left.x+left.width<=right.x);assert(Math.abs(left.y-right.y)<2);
+ assert.equal(await page.locator('[data-path="auth/register"]').count(),0);assert.equal(await page.locator('[data-google="register"]').count(),0);
+ await page.locator('[data-google="login"] button').click();await page.locator('#signin-feedback').getByText('Join with an invitation →').waitFor();
+ assert.equal((await f.db.query('select count(*)::int as n from league_private.members')).rows[0].n,0);
+ await page.locator('[data-invite-gate] input').fill('invalid');await page.getByRole('button',{name:'Continue with invitation'}).click();await page.locator('#invite-feedback').getByText(/invalid/).waitFor();
+ await page.locator('[data-invite-gate] input').fill(invite);await page.getByRole('button',{name:'Continue with invitation'}).click();await page.getByText('✓ Invitation accepted',{exact:true}).waitFor();
+ await page.getByRole('button',{name:'Google',exact:true}).click();await page.locator('[data-google="register"] button').click();await page.getByRole('heading',{name:'On the workbench'}).waitFor();assert.equal(await page.locator('#header-username').textContent(),'browsermaker');
+ await page.locator('#settings summary').click();await page.getByRole('button',{name:'Sign out'}).click();await page.locator('[data-google="login"] button').click();await page.getByRole('heading',{name:'On the workbench'}).waitFor();
+ // Create an isolated admin through the same handler, then test visible invite controls.
+ const response=await handle(new Request('https://fixture/functions/v1/league-api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'captain',password:'abcdef',confirm_password:'abcdef',invite:adminInvite})}));assert.equal(response.status,200);
+ await page.locator('#settings summary').click();await page.getByRole('button',{name:'Sign out'}).click();
+ const login=page.locator('[data-path="auth/login"]');await login.locator('[name=name]').fill('captain');await login.locator('[name=password]').fill('abcdef');await login.getByRole('button',{name:'Sign in',exact:true}).click();
+ await page.getByRole('button',{name:'Generate invitation'}).click();await page.locator('#invite-share:not([hidden])').waitFor();
+ const code=await page.locator('#invite-code').inputValue(),url=await page.locator('#invite-link').inputValue();assert.equal(url,site+'#join='+code);
+ await page.getByRole('button',{name:'Copy code',exact:true}).click();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),code);
+ await page.getByRole('button',{name:'Copy signup link',exact:true}).click();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),url);
+ const newcomer=await context.newPage();newcomer.on('pageerror',e=>errors.push(e.message));await newcomer.setViewportSize({width:390,height:844});await newcomer.goto(url);await newcomer.getByText('✓ Invitation accepted',{exact:true}).waitFor();
+ if(process.env.ENTRY_SCREENSHOTS)await newcomer.screenshot({path:process.env.ENTRY_SCREENSHOTS+'/entry-mobile.png',fullPage:true});
+ const signup=newcomer.locator('[data-path="auth/register"]');assert.equal(await signup.locator('[name=invite]').inputValue(),code);
+ assert.equal(await newcomer.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
+ const mobileLeft=await newcomer.locator('#signin-panel').boundingBox(),mobileRight=await newcomer.locator('#join-panel').boundingBox();assert(mobileRight.y<mobileLeft.y);
+ await signup.locator('[name=name]').fill('newcrew');await signup.locator('[name=password]').fill('abcdef');await signup.locator('[name=confirm_password]').fill('abcdef');await signup.getByRole('button',{name:'Create account',exact:true}).click();await newcomer.getByRole('heading',{name:'On the workbench'}).waitFor();
+ assert.deepEqual(errors,[]);console.log('Entry browser checks passed: two columns, invitation gate, Google guidance/signup/login, admin copy controls, invitation URL and phone signup.');
+}finally{await browser.close();await f.db.close();}

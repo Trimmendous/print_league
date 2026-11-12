@@ -185,6 +185,11 @@ def state():
 @app.post('/api/auth/<action>')
 def auth(action):
     if action=='logout': session.clear(); return jsonify(ok=True)
+    if action=='invitation':
+        with db() as c:
+            valid=c.execute('SELECT 1 FROM invites WHERE code=?',(field('invite'),)).fetchone()
+        if not valid: abort(403,'This invitation is invalid or already used. Ask an admin for a new one.')
+        return jsonify(ok=True,google_allowed=False)
     name=field('name',40); password=field('password',256)
     with db() as c:
         if action=='register':
