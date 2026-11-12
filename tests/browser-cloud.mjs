@@ -25,7 +25,7 @@ try {
  await page.getByText('Invitation accepted',{exact:false}).waitFor();
  const signup=page.locator('form[data-path="auth/register"]');
  await signup.locator('[name=name]').fill('BrowserCaptain');await signup.locator('[name=password]').fill('browser-test-password');await signup.locator('[name=confirm_password]').fill('browser-test-password');await signup.getByRole('button',{name:'Create account',exact:true}).click();
- await page.getByRole('heading',{name:'On the workbench'}).waitFor();
+ await page.getByRole('heading',{name:'On the workbench'}).waitFor();await page.reload();await page.getByRole('heading',{name:'On the workbench'}).waitFor();
  await page.locator('#settings summary').click();await page.locator('#admin-link').click();
  await page.getByRole('heading',{name:'Admin',exact:true}).waitFor();
  assert.match(await page.locator('.admin-stats').textContent(),/1Members/);
@@ -39,10 +39,12 @@ try {
  const code=(await page.locator('#recovery-codes').textContent()).split('\n')[0];assert.equal(code.length,64);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.locator('#settings summary').click();await page.getByRole('button',{name:'Sign out'}).click();
+ await page.locator('[data-path="auth/login"]').waitFor();await page.reload();await page.locator('[data-path="auth/login"]').waitFor();
  await page.getByText('Need help signing in?',{exact:true}).click();await page.getByText('Recover your account',{exact:true}).click();
  const reset=page.locator('form[data-path="auth/recover"]');
  await reset.locator('[name=name]').fill('BrowserCaptain');await reset.locator('[name=recovery_code]').fill(code);await reset.locator('[name=password]').fill('replacement-password');await reset.locator('[name=confirm_password]').fill('replacement-password');await reset.getByRole('button',{name:'Reset password'}).click();
- await page.getByRole('heading',{name:'On the workbench'}).waitFor();
+ await page.getByRole('heading',{name:'On the workbench'}).waitFor();await page.reload();await page.getByRole('heading',{name:'On the workbench'}).waitFor();
+ await db.exec('update league_private.sessions set revoked_at=now()');await page.reload();await page.locator('[data-path="auth/login"]').waitFor();
  assert.deepEqual(errors,[]);
  console.log('Cloud browser flow passed: signup → profile → recovery codes → logout → password recovery on phone layout.');
 } finally {await browser.close();await db.close();}
