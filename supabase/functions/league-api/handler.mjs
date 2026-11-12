@@ -73,6 +73,13 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
     await googleRPC('complete',{challenge_hash:await digest(challenge),nonce_hash:await digest(identity.nonce),subject:identity.subject,token_hash:await digest(sessionToken)},sessionHash);
     return reply({ok:true,session_token:sessionToken});
    }
+   if(path==='auth/reset-password') {
+    if(!adminRPC)throw new APIError(503,'Password reset is unavailable.');
+    const normalized=normalize(field(body,'name',40)),secret=password(body);
+    await limit('login:'+normalized);
+    if(secret!==body.confirm_password)throw new APIError(400,'Passwords do not match.');
+    return reply(await adminRPC('complete-reset',{normalized,reset_hash:await digest(field(body,'temporary_password',160)),hash:await hashPassword(secret)},''));
+   }
    if(path==='auth/login'||path==='auth/register'||path==='auth/recover') {
     const name=field(body,'name',40), normalized=normalize(name), secret=password(body,'password',path.endsWith('login')?1:6);
     await limit('login:'+normalized);
@@ -92,7 +99,14 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
     return reply({ok:true,session_token:sessionToken});
    }
    if(!sessionHash)throw new APIError(401,'Please sign in again.');
-   if(path==='admin/promote'){if(!adminRPC)throw new APIError(403,'Administrator access required.');return reply(await adminRPC('promote',{member_id:body.member_id},sessionHash));}
+   if(path==='admin/promote'||path==='admin/demote'){if(!adminRPC)throw new APIError(403,'Administrator access required.');return reply(await adminRPC(path.split('/')[1],{member_id:body.member_id},sessionHash));}
+   if(path==='admin/reset-password') {
+    if(!adminRPC)throw new APIError(403,'Administrator access required.');
+    await adminRPC('summary',{},sessionHash);await limit('admin-reset:'+sessionHash);
+    const temporary=token().slice(0,32);
+    await adminRPC('reset-password',{member_id:body.member_id,reset_hash:await digest(temporary)},sessionHash);
+    return reply({ok:true,temporary_password:temporary});
+   }
    if(path==='profile/google/unlink'){if(!googleRPC)throw new APIError(503,'Google linking is unavailable.');return reply(await googleRPC('unlink',{},sessionHash));}
    if(path==='auth/logout')return reply(await call('logout'));
    if(path==='profile/recovery-codes') {

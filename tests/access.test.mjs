@@ -79,3 +79,32 @@ test('Google signup remains invite-only; nonce/replay checks, explicit linking a
   await f.db.exec('set role authenticated');await assert.rejects(f.db.query("select public.league_google('complete','{}','')"),/permission denied/);await f.db.exec('reset role');
  }finally{await f.db.close();}
 });
+test('admin demotion and one-use temporary passwords enforce access, expiry and session revocation',async()=>{
+ const f=await fixture(),handle=createHandler(f),admin=client(handle),member=client(handle),guest=client(handle);
+ try{
+  for(const [c,name] of [[admin,'captain'],[member,'crew']])assert.equal((await c.request('auth/register',{name,password:'abcdef',confirm_password:'abcdef',invite:await f.invitation()})).status,200);
+  const aid=(await admin.request('state')).user.id,mid=(await member.request('state')).user.id;
+  await f.db.query('update league_private.members set admin=true where id=$1',[aid]);
+  assert.equal((await member.request('admin/reset-password',{member_id:aid})).status,403);
+  assert.equal((await member.request('admin/demote',{member_id:aid})).status,403);
+  assert.equal((await admin.request('admin/demote',{member_id:aid})).status,400);
+  await admin.request('admin/promote',{member_id:mid});
+  assert.equal((await admin.request('admin/demote',{member_id:mid})).status,200);
+  assert.equal((await member.request('admin')).status,403);
+  assert.equal((await admin.request('admin/reset-password',{member_id:aid})).status,400);
+  const first=await admin.request('admin/reset-password',{member_id:mid});assert.equal(first.status,200);assert.match(first.temporary_password,/^[a-f0-9]{32}$/);
+  const reset=p=>guest.request('auth/reset-password',{name:'crew',temporary_password:p,password:'new123',confirm_password:'new123'});
+  const second=await admin.request('admin/reset-password',{member_id:mid});assert.equal((await reset(first.temporary_password)).status,403);
+  await f.db.query("update league_private.password_resets set expires_at=now()-interval '1 second'");
+  assert.equal((await reset(second.temporary_password)).status,403);
+  const third=await admin.request('admin/reset-password',{member_id:mid});
+  assert.equal((await reset(third.temporary_password)).status,200);
+  assert.equal((await member.request('state')).status,401);
+  assert.equal((await reset(third.temporary_password)).status,403);
+  assert.equal((await guest.request('auth/login',{name:'crew',password:'abcdef'})).status,401);
+  assert.equal((await guest.request('auth/login',{name:'crew',password:'new123'})).status,200);
+  const fourth=await admin.request('admin/reset-password',{member_id:mid});
+  assert.equal((await guest.request('profile/credentials',{name:'crew',current_password:'new123',password:'other1',confirm_password:'other1'})).status,200);
+  assert.equal((await reset(fourth.temporary_password)).status,403);
+ }finally{await f.db.close();}
+});
