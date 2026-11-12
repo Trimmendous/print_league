@@ -34,6 +34,7 @@ try{
  const response=await handle(new Request('https://fixture/functions/v1/league-api/auth/register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:'captain',password:'abcdef',confirm_password:'abcdef',invite:adminInvite})}));assert.equal(response.status,200);
  await page.locator('#settings summary').click();await page.getByRole('button',{name:'Sign out'}).click();
  const login=page.locator('[data-path="auth/login"]');await login.locator('[name=name]').fill('captain');await login.locator('[name=password]').fill('abcdef');await login.getByRole('button',{name:'Sign in',exact:true}).click();
+ const generator=page.locator('[data-path="invites"]');await generator.locator('[name=label]').fill('Shared crew');await generator.locator('[name=usage]').selectOption('reusable');await generator.locator('[name=expiry]').selectOption('never');
  await page.getByRole('button',{name:'Generate invitation'}).click();await page.locator('#invite-share:not([hidden])').waitFor();
  const code=await page.locator('#invite-code').inputValue(),url=await page.locator('#invite-link').inputValue();assert.equal(url,site+'#join='+code);
  await page.getByRole('button',{name:'Copy code',exact:true}).click();assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),code);
@@ -44,5 +45,13 @@ try{
  assert.equal(await newcomer.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  const mobileLeft=await newcomer.locator('#signin-panel').boundingBox(),mobileRight=await newcomer.locator('#join-panel').boundingBox();assert(mobileRight.y<mobileLeft.y);
  await signup.locator('[name=name]').fill('newcrew');await signup.locator('[name=password]').fill('abcdef');await signup.locator('[name=confirm_password]').fill('abcdef');await signup.getByRole('button',{name:'Create account',exact:true}).click();await newcomer.getByRole('heading',{name:'On the workbench'}).waitFor();
- assert.deepEqual(errors,[]);console.log('Entry browser checks passed: two columns, invitation gate, Google guidance/signup/login, admin copy controls, invitation URL and phone signup.');
+ const another=await context.newPage();await another.goto(url);await another.getByText('✓ Invitation accepted',{exact:true}).waitFor();
+ const secondSignup=another.locator('[data-path="auth/register"]');await secondSignup.locator('[name=name]').fill('newcrew2');await secondSignup.locator('[name=password]').fill('abcdef');await secondSignup.locator('[name=confirm_password]').fill('abcdef');await secondSignup.getByRole('button',{name:'Create account',exact:true}).click();await another.getByRole('heading',{name:'On the workbench'}).waitFor();
+ await page.locator('#settings summary').click();await page.locator('#admin-link').click();
+ const item=page.locator('.invitation-item').filter({has:page.getByText('Shared crew',{exact:true})});await item.locator('summary').click();assert.match(await item.textContent(),/2 signups/);assert.match(await item.textContent(),/No expiry/);
+ await item.locator('[name=expiry]').selectOption('1h');await item.getByRole('button',{name:'Save invitation'}).click();await page.getByText('Saved.',{exact:true}).waitFor();await item.locator('summary').click();assert.match(await item.textContent(),/Expires/);
+ page.once('dialog',dialog=>dialog.accept());await item.getByRole('button',{name:'Revoke invitation'}).click();await item.getByText(/Revoked/).waitFor();
+ const blocked=await context.newPage();await blocked.goto(url);await blocked.locator('#invite-feedback').getByText(/invalid, expired, or already used/).waitFor();
+ assert.equal((await f.db.query('select count(*)::int as n from league_private.members')).rows[0].n,4);
+ assert.deepEqual(errors,[]);console.log('Entry browser checks passed: shared invitations, editing, revocation, two columns, invitation gate, Google guidance/signup/login, admin copy controls, invitation URL and phone signup.');
 }finally{await browser.close();await f.db.close();}

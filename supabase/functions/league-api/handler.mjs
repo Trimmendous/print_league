@@ -150,8 +150,15 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
     return reply({ok:true,session_token:sessionToken});
    }
    if(path==='profile')return reply(await call('profile',{display_name:field(body,'display_name',80)}));
-   if(path==='invites') {
-    const code=token();await call('invites',{invite_hash:await digest(code)});return reply({code});
+   if(path==='invites'||/^admin\/invitations\/\d+\/(edit|revoke)$/.test(path)) {
+    const match=/^admin\/invitations\/(\d+)\/(edit|revoke)$/.exec(path);
+    if(match&&!adminRPC)throw new APIError(403,'Administrator access required.');
+    if(match?.[2]==='revoke')return reply(await adminRPC('invitation-revoke',{id:match[1]},sessionHash));
+    const expiry=body.expiry||(match?'keep':'7d'),usage=body.usage||'once',label=body.label||'';
+    if(!['1h','24h','7d','never',...(match?['keep']:[])].includes(expiry)||!['once','reusable'].includes(usage)||typeof label!=='string'||Array.from(label.trim()).length>80)throw new APIError(400,'Choose valid invitation settings.');
+    const settings={expiry,usage,label:label.trim()};
+    if(match)return reply(await adminRPC('invitation-edit',{id:match[1],...settings},sessionHash));
+    const code=token(),created=await call('invites',{invite_hash:await digest(code),...settings});return reply({...created,code});
    }
    if(path==='rounds')return reply(await call('rounds',{
     title:field(body,'title'),deadline:date(body.deadline,'deadline'),prevote:[true,'on','true','1'].includes(body.prevote),

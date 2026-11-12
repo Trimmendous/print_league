@@ -146,3 +146,46 @@ test('invitation entry validates without consuming and rejects used or expired c
   out=await guest.request('auth/invitation',{invite:setup});assert.equal(out.status,200);assert.equal(out.google_allowed,false);
  }finally{await f.db.close();}
 });
+test('invitation policies support shared codes, expiry, editing and revocation across signup methods',async()=>{
+ const f=await fixture(),{privateKey,publicKey}=await jose.generateKeyPair('RS256'),clientID='test.apps.googleusercontent.com';
+ const handle=createHandler({...f,google:googleVerifier(clientID,jose,publicKey)}),admin=client(handle),member=client(handle);
+ const register=(c,name,invite)=>c.request('auth/register',{name,invite,password:'abcdef',confirm_password:'abcdef'});
+ try{
+  await register(admin,'host',await f.invitation());const aid=(await admin.request('state')).user.id;await f.db.query('update league_private.members set admin=true where id=$1',[aid]);
+  for(const [expiry,hours] of [['1h',1],['24h',24],['never',null]]){
+   const out=await admin.request('invites',{expiry,usage:'once'});assert.equal(out.status,200);assert.equal(out.max_uses,1);
+   if(hours===null)assert.equal(out.expires_at,null);else assert(Math.abs(Date.parse(out.expires_at)-Date.now()-hours*3600000)<10000);
+  }
+  const shared=await admin.request('invites',{expiry:'never',usage:'reusable',label:'Crew'});assert.equal(shared.status,200);assert.equal(shared.max_uses,null);
+  assert.equal((await register(member,'first',shared.code)).status,200);assert.equal((await register(client(handle),'second',shared.code)).status,200);
+  const google=client(handle);let ch=await google.request('auth/google/challenge',{mode:'login'});
+  const signed=nonce=>new jose.SignJWT({nonce,sub:'shared-google'}).setProtectedHeader({alg:'RS256'}).setIssuer('https://accounts.google.com').setAudience(clientID).setIssuedAt().setExpirationTime('5m').sign(privateKey);
+  const complete=async()=>google.request('auth/google',{mode:'register',name:'third',username_mode:'custom',invite:shared.code,challenge:ch.challenge,credential:await signed(ch.nonce)});
+  assert.equal((await complete()).status,200);ch=await google.request('auth/google/challenge',{mode:'login'});assert.equal((await complete()).status,200);
+  let summary=await admin.request('admin'),record=summary.invitations.find(i=>i.id===shared.id);assert.equal(record.uses,3);assert.equal(record.active,true);assert(!JSON.stringify(summary).includes(shared.code));assert(!JSON.stringify(summary).includes('token_hash'));
+  assert.equal((await member.request(`admin/invitations/${shared.id}/edit`,{expiry:'never',usage:'once'})).status,403);
+  assert.equal((await member.request(`admin/invitations/${shared.id}/revoke`,{})).status,403);
+  assert.equal((await admin.request(`admin/invitations/${shared.id}/edit`,{expiry:'keep',usage:'once'})).status,409);
+  assert.equal((await admin.request(`admin/invitations/${shared.id}/edit`,{expiry:'1h',usage:'reusable',label:'Edited crew'})).status,200);
+  record=(await admin.request('admin')).invitations.find(i=>i.id===shared.id);assert.equal(record.label,'Edited crew');assert(record.expires_at);assert.equal(record.uses,3);
+  await f.db.query("update league_private.invites set created_at=now()-interval '2 days',expires_at=now()-interval '1 day' where id=$1",[shared.id]);
+  assert.equal((await client(handle).request('auth/invitation',{invite:shared.code})).status,403);
+  assert.equal((await register(client(handle),'expired',shared.code)).status,403);
+  assert.equal((await admin.request(`admin/invitations/${shared.id}/edit`,{expiry:'never',usage:'reusable'})).status,200);
+  assert.equal((await client(handle).request('auth/invitation',{invite:shared.code})).status,200);
+  assert.equal((await admin.request(`admin/invitations/${shared.id}/revoke`,{})).status,200);
+  assert.equal((await client(handle).request('auth/invitation',{invite:shared.code})).status,403);
+  assert.equal((await register(client(handle),'revoked',shared.code)).status,403);
+  ch=await google.request('auth/google/challenge',{mode:'register',display_name:'No',invite:shared.code});assert.equal(ch.status,403);
+  assert.equal((await admin.request(`admin/invitations/${shared.id}/edit`,{expiry:'never',usage:'reusable'})).status,409);
+  const one=await admin.request('invites',{expiry:'never',usage:'once'});
+  const attempts=await Promise.all([register(client(handle),'race-one',one.code),register(client(handle),'race-two',one.code)]);assert.deepEqual(attempts.map(x=>x.status).sort(),[200,403]);
+  record=(await admin.request('admin')).invitations.find(i=>i.id===one.id);assert.equal(record.uses,1);assert.equal(record.active,false);
+  const reserved=(await admin.request('admin')).invitations.find(i=>i.restricted);
+  // Bootstrap invitations cannot be turned into reusable administrator grants.
+  const setup=await f.invitation();await f.db.query('update league_private.invites set grants_admin=true where token_hash=$1',[await digest(setup)]);
+  const setupID=(await admin.request('admin')).invitations.find(i=>i.restricted).id;
+  assert.equal((await admin.request(`admin/invitations/${setupID}/edit`,{expiry:'never',usage:'reusable'})).status,403);
+  await assert.rejects(f.db.query('update league_private.invites set max_uses=null where id=$1',[setupID]),/reserved_invites_single_use/);
+ }finally{await f.db.close();}
+});
