@@ -1,0 +1,16 @@
+[
+  {
+    "version": "0.0.0",
+    "title": "Initial Build",
+    "voyage": "Maiden voyage",
+    "summary": "Getting our sealegs.",
+    "changes": [
+      "Added topic suggestions, voting, competition deadlines, and category awards.",
+      "Added crew profiles, trophy shelves, and a shared ideas board.",
+      "Added print-link cards with optional MakerWorld or Printables images.",
+      "Added account recovery codes and private profile photos.",
+      "Added a Benchy-inspired 404 page and shared orange boat mark.",
+      "Improved phone and tablet layouts, appearance themes, and accessible controls."
+    ]
+  }
+]

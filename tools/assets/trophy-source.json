@@ -1,0 +1,17 @@
+{
+  "source": "Coloured_BenchyTrophyU-MAKING-WAVES-FIXED.3mf",
+  "sha256": "cffac20220ef9c66bf4f9269c7f8237feb59cb1efbc3a5fc319456741e939c25",
+  "creator_from_metadata": "3DDoc; local label modification",
+  "triangles": 64650,
+  "paint_subdivision_faces_approximated": 253,
+  "presentation_gold": "#B27A20",
+  "camera": {
+    "position": [
+      220,
+      -220,
+      170
+    ],
+    "lens_mm": 72
+  },
+  "notes": "Body mesh only; support enforcer and separate unassembled label plate excluded. No print geometry modified."
+}

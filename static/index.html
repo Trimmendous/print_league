@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Print League · Making waves</title><link rel="icon" type="image/svg+xml" href="/static/assets/benchy.svg"><script src="/static/theme.js"></script><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/responsive.css"></head>
+<body>
+<header class="site-header">
+ <a href="#" class="brand"><svg viewBox="0 0 128 108" aria-hidden="true" class="benchy-mark"><use href="/static/assets/benchy.svg#boat"/></svg><span>PRINT LEAGUE<small id="brand-version">v0.0.0 · Maiden voyage</small></span></a>
+ <nav id="page-tabs" class="page-tabs" aria-label="Main navigation" hidden><a href="#" id="tab-home">Home</a><a href="#winners" id="tab-winners">Winners</a><a href="#features" id="tab-features">Features</a><a href="#changelog" id="tab-changelog">Changelog</a><a href="#credits" id="tab-credits">Credits</a></nav>
+ <div class="header-right"><span id="header-username" class="header-username" hidden></span><details id="settings" class="settings" hidden><summary>⚙ <span>Settings</span></summary><nav aria-label="Account settings"><label class="theme-setting" for="theme-choice">Appearance<select id="theme-choice"><option value="system">System (default)</option><option value="light">☀ Light</option><option value="dark">☾ Dark</option><option value="benchy">Benchy</option></select></label><label id="rain-setting" class="rain-setting" hidden><input id="rain-motion" type="checkbox" checked> Animate Benchy rain</label><a href="#profile">Profile <span>↗</span></a><button id="logout" type="button">Sign out <span>↪</span></button></nav></details></div>
+</header>
+
+<main>
+ <section class="intro" id="intro"><div class="intro-copy"><p class="eyebrow"><span class="signal"></span> A LITTLE FRIENDLY COMPETITION</p><h1>Small prints.<br><em>Making waves.</em></h1><p>A crew of makers. A fresh challenge.<br>Something worth clearing your print bed for.</p><div class="hero-tags"><span>01 / Pick a topic</span><span>02 / Make it yours</span><span>03 / Take the trophy</span></div></div><figure class="hero-trophy"><div class="orbit"></div><img src="/static/assets/benchy-trophy.png" alt="Our winner’s trophy: a gold Benchy on a blue wave and black pedestal" width="720" height="860"><figcaption><span>THE PRIZE</span>Making waves, in 3D.<small>Printed by us. Earned by you.</small></figcaption></figure></section>
+ <p id="message" role="status" aria-live="polite"></p><div id="app"></div>
+</main>
+<footer class="site-footer">Print something.</footer>
+<script src="/static/api.js"></script>
+<script src="/static/app.js"></script>
+</body></html>

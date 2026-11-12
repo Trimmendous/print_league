@@ -1,0 +1,7 @@
+project_id = "print-league"
+
+# Custom username-only authentication will be validated inside the function.
+# Private operations validate opaque sessions against the private database tables.
+[functions.league-api]
+verify_jwt = false
+entrypoint = "./functions/league-api/index.ts"

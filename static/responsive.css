@@ -1,0 +1,138 @@
+/* Responsive layout follows the component/theme sheet so sizing has one owner. */
+.site-header .header-right{gap:28px}
+.header-username{max-width:180px}
+main,.card,.profile-grid>*,.credits-grid>*,.release-card,.idea-card{min-width:0}
+button,input,select,textarea{touch-action:manipulation}
+input,select,textarea{scroll-margin-block:24px}
+.settings nav{max-width:calc(100vw - 32px);max-height:calc(100dvh - 110px);overflow-y:auto;overscroll-behavior:contain}
+.settings>summary{min-width:44px;min-height:44px;display:flex;align-items:center;justify-content:center;gap:6px}
+
+@media(max-width:1050px){
+  /* Account controls keep their own space; tabs get a full-width second row. */
+  .site-header{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px 24px;padding:18px 24px 0}
+  .site-header .brand{min-width:0;justify-self:start}
+  .site-header .header-right{grid-column:2;grid-row:1;margin:0;gap:24px}
+  .site-header .page-tabs{grid-column:1/-1;grid-row:2;width:100%;gap:28px;overflow-x:auto;overscroll-behavior-x:contain;scroll-padding-inline:4px;padding:0 2px}
+  .site-header .page-tabs a{font-size:14px;min-height:48px;display:flex;align-items:center;padding:12px 4px;scroll-snap-align:start}
+  .profile-grid{grid-template-columns:minmax(220px,.8fr) minmax(0,1.4fr)}
+  .auth{grid-template-columns:1fr;gap:12px}
+  .auth>div:first-child{padding:0}
+}
+
+@media(max-width:700px){
+  main{padding:0 20px 32px}
+  .site-header{padding:14px 20px 0;gap:10px 16px}
+  .header-username{max-width:120px}
+  .card{padding:22px;border-radius:14px}
+  .grid,.crew-shelf,.profile-grid,.credits-grid{grid-template-columns:minmax(0,1fr)}
+  .profile-grid{gap:0}
+  .organizer form[data-path="rounds"]{grid-template-columns:minmax(0,1fr);gap:18px}
+  .organizer form[data-path="rounds"] button{justify-self:stretch}
+  .intro{grid-template-columns:1fr;gap:0;text-align:center;min-height:0}
+  .intro-copy{padding:30px 0 0}
+  .intro h1{font-size:clamp(38px,8vw,54px);letter-spacing:-1.8px}
+  .hero-tags{justify-content:center}
+  .hero-trophy{height:310px;margin:0 0 20px}
+  .hero-trophy>img{width:210px;height:250px;transform:translateY(-10px)}
+  .orbit{width:230px;height:230px;transform:translateY(-10px)}
+  .hero-trophy figcaption{bottom:0}
+  .auth{margin-top:22px;padding:22px}
+  .auth form{grid-template-columns:minmax(0,1fr)}
+  .auth h2{font-size:30px}
+  .welcome{padding:24px 0 20px}
+  .page-title{font-size:34px;line-height:1.15;letter-spacing:-1px}
+  .welcome .muted{font-size:14px}
+  .section-heading{margin:26px 0 18px;gap:12px}
+  .round-card h2{font-size:25px;line-height:1.2}
+  .round-card form,.idea-card form,.share-link form{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
+  label{min-width:0}
+  form>input,form>select,form>label,form>button{min-width:0;max-width:100%}
+  input:not([type="checkbox"]),select,textarea{width:100%;font-size:16px;min-height:46px}
+  button{min-height:44px;font-size:14px}
+  .profile-card form[data-path="profile/avatar"] input,.theme-setting select,.idea-card select{font-size:16px}
+  .profile-grid form button:not(.password-toggle),.share-link button,.idea-compose form button{width:100%;justify-self:stretch}
+  button.password-toggle{width:44px;height:44px;min-height:44px;right:1px}
+  .password-field input{padding-right:50px;min-height:48px}
+  .check-label,.rain-setting,.stack-motion{min-height:44px}
+  .check-label input,.rain-setting input,.stack-motion input{flex-shrink:0;width:20px;height:20px}
+  .row{align-items:flex-start;gap:12px;flex-wrap:wrap}
+  .topic-actions{width:100%;display:flex;gap:10px}
+  .topic-actions form{flex:1;display:block;margin:0}
+  .topic-actions button{width:100%;min-height:44px}
+  .round-controls form>select{width:100%}
+  .crew-details summary,.share-link summary,.join summary,.organizer>summary,.idea-compose>summary{min-height:44px;line-height:1.5;padding-block:12px;font-size:14px}
+  .crew-details p{overflow-wrap:anywhere}
+  .winning-topic{padding:16px}
+  .winning-topic h3{font-size:24px}
+  .voyage{padding:16px}
+  .countdown-clock{font-size:18px;line-height:1.4;overflow-wrap:anywhere}
+  .voyage-labels{font-size:12px;line-height:1.5}
+  .voyage-milestones{font-size:12px}
+  .print-cover{height:clamp(220px,65vw,340px)}
+  .print-card-copy{padding:18px}
+  .print-card h4{font-size:21px}
+  .print-card-copy p{font-size:14px}
+  .print-destination{font-size:13px}
+  .print-card-footer{padding:12px;flex-wrap:wrap;gap:10px}
+  .print-card-footer small{min-width:0;overflow-wrap:anywhere;flex:1}
+  .print-card-footer form{margin:0;display:block}
+  .print-card-footer button{min-height:44px}
+  .lane-cards{grid-template-columns:minmax(0,1fr)}
+  .idea-description,.idea-author,.lane-empty{font-size:13px}
+  .release-entry{grid-template-columns:minmax(0,1fr);gap:0}
+  .release-marker{border:0;padding:0 0 14px}
+  .release-marker:after{display:none}
+  .release-card{padding:20px}
+  .release-card ul{padding-left:20px}
+  .stack-showcase{padding:20px 16px}
+  .stack-node{padding:20px}
+  .credit-links{flex-wrap:wrap;gap:8px 20px}
+  .credit-links a{display:inline-flex;align-items:center;min-height:44px}
+  .pagination{display:flex;flex-wrap:wrap;gap:12px}
+  .pagination button{flex:1;min-width:85px;min-height:44px}
+  .pagination span{font-size:13px}
+  .award{font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+  .award>img{width:50px;height:68px}
+  .lost-main{padding-top:28px}
+}
+
+@media(max-width:480px){
+  .site-header{padding:12px 12px 0;column-gap:8px}
+  .site-header .brand{font-size:12px;gap:7px}
+  .site-header .brand .benchy-mark{width:32px;height:32px}
+  .site-header .brand small{font-size:8px;letter-spacing:0;max-width:115px;white-space:normal;line-height:1.4}
+  .site-header .header-right{gap:20px}
+  .header-username{max-width:64px;font-size:12px}
+  .settings>summary{padding:9px;font-size:18px;width:44px;height:44px}
+  .settings>summary>span{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+  .settings nav{width:min(280px,calc(100vw - 24px));max-height:calc(100dvh - 100px)}
+  .site-header .page-tabs{gap:22px;scroll-snap-type:x proximity}
+  .site-header .page-tabs a{font-size:13px;min-height:48px}
+  main{padding-inline:14px}
+  .card{padding:18px}
+  .round-card h2{font-size:23px}
+  .page-title{font-size:32px}
+  .print-cover img{padding:10px}
+  .print-card-copy{padding:16px}
+  .tally-mark img{width:35px;height:47px}
+  .lost-scene{height:230px}
+  .benchy-drop:nth-child(n+11){display:none}
+  body>.site-footer{min-height:44px;padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px))}
+  body{padding-bottom:calc(48px + env(safe-area-inset-bottom,0px))}
+}
+
+@media(max-width:359px){
+  .header-username{max-width:50px}
+  .site-header .header-right{gap:18px}
+  .site-header .brand{font-size:11px}
+  .site-header .brand .benchy-mark{width:28px}
+  .hero-tags{gap:10px;font-size:9px}
+}
+.settings nav a,.settings nav button{min-height:44px}
+@media(max-height:500px) and (orientation:landscape){
+  .settings nav{max-height:calc(100dvh - 90px)}
+  body>.site-footer{position:relative;min-height:40px}
+  body{padding-bottom:0}
+}
+
+.recovery-codes { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }

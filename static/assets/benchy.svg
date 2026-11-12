@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 108">
+  <title>Print League Benchy</title>
+  <defs>
+    <symbol id="boat" viewBox="0 0 128 108">
+      <!-- Side profile inspired by the supplied 2D Benchy: raked bow,
+           arched cabin doorway, overhanging roof, chimney and bow porthole. -->
+      <g fill="var(--benchy-cabin,currentColor)">
+        <path d="M49 24 47 9Q47 5 54 5t7 4l-1 14Z"/>
+        <path d="m44 25 46-5 1 8-46 5Z"/>
+        <path fill-rule="evenodd" d="m48 32 38-4-2 42-13 7-3 5H51Zm10 44 13-5 1-24q0-8-6-8t-7 9Z"/>
+        <path d="M28 79V68l17-1v12ZM12 82l-1-6 7-1 2 6Z"/>
+      </g>
+      <path fill="var(--benchy-hull,currentColor)" fill-rule="evenodd" d="M6 83q32 4 60-6l15-17 41-13q-2 28-23 43-15 10-40 12H17Zm104-23c-5 0-6 10-2 11s8-10 2-11Z"/>
+      <path d="M6 82q32 4 60-6l15-17 41-13" fill="none" stroke="var(--benchy-cabin,currentColor)" stroke-width="4" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+  <use href="#boat"/>
+</svg>
