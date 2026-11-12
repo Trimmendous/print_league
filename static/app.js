@@ -32,7 +32,7 @@ function tickClocks(){
   el.textContent=seconds?`${Math.floor(seconds/86400)}d ${Math.floor(seconds/3600)%24}h ${Math.floor(seconds/60)%60}m ${seconds%60}s`:'Updating phase…';
  });
 }
-function organizer(){return `<details class="card organizer"><summary>⚓ Organizer workbench</summary>${form('rounds',`<label>Competition name<input name="title" maxlength="160" required></label><label>Competition ends<input name="deadline" type="datetime-local" required></label><label class="check-label"><input name="prevote" type="checkbox" value="on"> Collect topics before voting</label><label class="prevote-time" hidden>Voting opens (optional)<input name="vote_opens_at" type="datetime-local" disabled><small>Leave blank to open voting manually.</small></label><label>Voting closes (optional)<input name="votes_close_at" type="datetime-local"><small>Leave blank to close manually. The competition deadline is the latest possible close.</small></label><p class="form-hint">Times use your local timezone. With topic collection enabled, everyone can add or delete their own suggestions until voting opens; then the list is frozen.</p><button>Create competition</button>`)}${form('invites',btn('Generate invitation'))}<p id="invite" role="status"></p></details>`;}
+function organizer(){return `<details class="card organizer"><summary>⚓ Organizer workbench</summary>${form('rounds',`<label>Competition name<input name="title" maxlength="160" required></label><label>Final printing deadline<input name="deadline" type="datetime-local" required><small>The overall competition ends at this time. This is separate from topic submission and topic voting.</small></label><label class="check-label"><input name="prevote" type="checkbox" value="on"> Start with a topic-submission period</label><label class="prevote-time" hidden>Topic submissions close / topic voting opens (optional)<input name="vote_opens_at" type="datetime-local" disabled><small>Topic submissions start when you create the competition. At this time, suggestions close and voting on those topics begins. Leave blank to start voting manually.</small></label><label>Topic voting closes / printing starts (optional)<input name="votes_close_at" type="datetime-local"><small>Voting on the suggested topics ends and the selected topic moves into printing (ties need a decision). Leave blank to close topic voting manually; it cannot run past the final printing deadline.</small></label><p class="form-hint">All times use your local timezone. Enable a topic-submission period to collect suggestions before voting. Otherwise, topic suggestions and voting both open immediately. These voting dates choose what to print; they are not voting dates for finished prints.</p><button>Create competition</button>`)}${form('invites',btn('Generate invitation'))}<p id="invite" role="status"></p></details>`;}
 function winnersPage(){
  const past=s.rounds.filter(r=>r.phase==='completed').reverse(),pages=Math.max(1,Math.ceil(past.length/6));archivePage=Math.min(archivePage,pages-1);
  return `<div class="section-heading"><div><p class="eyebrow">A LITTLE WELL-EARNED GLORY</p><h1 class="page-title">Winners</h1></div><div class="winners-emblem">${trophyImage}</div></div><div class="crew-shelf">${[...s.users].sort((a,b)=>winsFor(b.id).length-winsFor(a.id).length).filter(u=>winsFor(u.id).length).map(u=>`<article class="crew-card"><div class="crew-identity">${avatar(u)}<h3>${name(u.id)}</h3></div>${tally(u.id)}</article>`).join('')||'<p class="muted">The first trophy is waiting for its captain.</p>'}</div><h2>Completed competitions</h2><div class="grid">${past.slice(archivePage*6,archivePage*6+6).map(round).join('')||'<div class="empty-state"><span>⚓</span><h3>A new fleet, a fresh start.</h3><p>Completed competitions and their winners will dock here.</p></div>'}</div>${pages>1?`<nav class="pagination" aria-label="Completed competitions"><button type="button" data-page="${archivePage-1}" ${archivePage===0?'disabled':''}>← Newer</button><span>Page ${archivePage+1} of ${pages}</span><button type="button" data-page="${archivePage+1}" ${archivePage===pages-1?'disabled':''}>Older →</button></nav>`:''}`;
@@ -77,8 +77,8 @@ function adminPage(){
 function temporaryPasswordForm(){return `<details class="join"><summary>Have a temporary password from an admin?</summary>${form('auth/reset-password','<label>Username<input name="name" autocomplete="username" required></label><label>Temporary password<input name="temporary_password" type="password" autocomplete="off" required></label><label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>Set new password</button>')}</details>`;}
 function googleForm(mode){
  if(!s.capabilities?.google_client_id)return '';
- const fields=mode==='register'?'<label>Display name<input name="display_name" maxlength="80" autocomplete="nickname" required></label><label>Invitation code<input name="invite" autocomplete="off" required></label>':'';
- return `<form data-google="${mode}" class="google-signin">${fields}<button type="submit">${mode==='link'?'Link Google':mode==='register'?'Join with Google':'Sign in with Google'}</button><div data-google-button></div></form>`;
+ const fields=mode==='register'?'<label>Username preference<select name="username_mode"><option value="custom">Choose my own username</option><option value="gmail">Generate from my Gmail name</option></select></label><label data-google-username>Choose a username<input name="name" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label><p class="muted">Your username is public. Gmail generation uses the part before @gmail.com and adds a number if needed. Your full email stays private.</p><label>Invitation code *<input name="invite" autocomplete="off" required></label><small data-google-required>Enter your invitation and username choice to enable Google signup.</small>':'';
+ return `<form data-google="${mode}" class="google-signin">${fields}<div data-google-button ${mode==='register'?'hidden':''}></div><small>${mode==='link'?'Link Google to your current membership.':'* An invitation code is required to create an account, including with Google. Existing members can sign in without another code.'}</small></form>`;
 }
 function googleProfile(){
  if(!s.capabilities?.google_client_id)return '';
@@ -90,17 +90,33 @@ function loadGoogle(){
  if(!googleLibrary)googleLibrary=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;script.onload=resolve;script.onerror=()=>{googleLibrary=null;script.remove();reject(Error('Google sign-in could not load. Please try again.'));};document.head.appendChild(script);});
  return googleLibrary;
 }
-async function startGoogle(f){
- const body=Object.fromEntries(new FormData(f));body.mode=f.dataset.google;
- const challenge=await post('auth/google/challenge',body);await loadGoogle();
- document.querySelectorAll('[data-google-button]').forEach(slot=>slot.replaceChildren());
- window.google.accounts.id.initialize({client_id:challenge.client_id,nonce:challenge.nonce,auto_select:false,ux_mode:'popup',use_fedcm_for_button:true,callback:async response=>{
-  try{await post('auth/google',{challenge:challenge.challenge,credential:response.credential});if(body.mode!=='link')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
-  catch(error){document.querySelector('#message').textContent=error.message;f.querySelector('[data-google-button]')?.replaceChildren();}
- }});
- window.google.accounts.id.renderButton(f.querySelector('[data-google-button]'),{type:'standard',theme:'outline',size:'large',text:body.mode==='register'?'signup_with':'signin_with'});
- document.querySelector('#message').textContent='Use the Google button to choose your account.';
+let googleGeneration=0,googleRefresh;
+async function hydrateGoogle(){
+ const generation=++googleGeneration;clearTimeout(googleRefresh);
+ if(!s.capabilities?.google_client_id)return;
+ const forms=[...root.querySelectorAll('[data-google]')];if(!forms.length)return;
+ try{
+  await loadGoogle();if(generation!==googleGeneration)return;
+  const challenge=await post('auth/google/challenge',{mode:s.user?'link':'login'});
+  if(generation!==googleGeneration||!forms[0].isConnected)return;
+  window.google.accounts.id.initialize({client_id:challenge.client_id,nonce:challenge.nonce,auto_select:false,ux_mode:'popup',use_fedcm_for_button:true,callback:async response=>{
+   const f=forms.find(form=>form.dataset.google===response.state);if(!f||!f.isConnected||!f.reportValidity())return;
+   const body=Object.fromEntries(new FormData(f));body.mode=f.dataset.google;
+   try{await post('auth/google',{...body,challenge:challenge.challenge,credential:response.credential});if(body.mode!=='link')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
+   catch(error){document.querySelector('#message').textContent=error.message;void hydrateGoogle();}
+  }});
+  forms.forEach(f=>{const slot=f.querySelector('[data-google-button]');slot.replaceChildren();window.google.accounts.id.renderButton(slot,{type:'standard',theme:'outline',size:'large',width:280,text:f.dataset.google==='register'?'signup_with':'signin_with',state:f.dataset.google});});
+  googleRefresh=setTimeout(()=>{if(forms[0].isConnected)void hydrateGoogle();},240000);
+ }catch(error){if(generation===googleGeneration)document.querySelector('#message').textContent=error.message;}
 }
+function updateGoogleSignup(f){
+ if(f?.dataset.google!=='register')return;
+ const custom=f.elements.username_mode.value==='custom',name=f.elements.name;
+ name.required=custom;name.disabled=!custom;name.closest('label').hidden=!custom;
+ const ready=f.checkValidity();f.querySelector('[data-google-button]').hidden=!ready;f.querySelector('[data-google-required]').hidden=ready;
+}
+root.addEventListener('input',e=>updateGoogleSignup(e.target.form));
+root.addEventListener('change',e=>updateGoogleSignup(e.target.form));
 root.addEventListener('click',async e=>{if(e.target.id==='copy-invite'){const field=document.querySelector('#invite-link');try{await navigator.clipboard.writeText(field.value);document.querySelector('#message').textContent='Invitation link copied.';}catch{field.select();document.querySelector('#message').textContent='Copy the selected invitation link.';}}});
 
 const avatarBlobs=new Map();
@@ -116,7 +132,7 @@ async function hydrateAvatars(){
  const valid=new Set((s.users||[]).filter(u=>u.avatar).map(u=>u.id+':'+u.avatar));
  for(const [key,entry] of avatarBlobs)if(!valid.has(key)){if(entry.url)URL.revokeObjectURL(entry.url);avatarBlobs.delete(key);}
 }
-function render(){renderContent();void hydrateAvatars();const invite=joinInvite();if(!s.user&&invite)document.querySelectorAll('input[name=invite]').forEach(input=>{input.value=invite;const details=input.closest('details');if(details)details.open=true;});}
+function render(){renderContent();void hydrateAvatars();void hydrateGoogle();const invite=joinInvite();if(!s.user&&invite)document.querySelectorAll('input[name=invite]').forEach(input=>{input.value=invite;const details=input.closest('details');if(details)details.open=true;updateGoogleSignup(input.form);});}
 function renderContent(){
  document.querySelector('#settings').hidden=!s.user;
  document.querySelector('#admin-link').hidden=!s.user?.admin||!s.capabilities?.admin_management;
@@ -179,9 +195,9 @@ function round(r){
  ${controls?`<div class="round-controls"><p class="eyebrow">ORGANIZER CONTROLS</p>${controls}</div>`:''}</section>`;
 }
 root.addEventListener('submit',async e=>{
- e.preventDefault();const f=e.target,b=e.submitter||f.querySelector('button:not([type="button"])');b.disabled=true;
+ e.preventDefault();const f=e.target,b=e.submitter||f.querySelector('button:not([type="button"])');if(f.dataset.google)return;b.disabled=true;
  try{
-  if(f.dataset.google){await startGoogle(f);return;}
+  if(f.dataset.google)return;
   const d=new FormData(f);
   f.querySelectorAll('input[type="datetime-local"]').forEach(field=>{if(field.value&&!field.disabled)d.set(field.name,new Date(field.value).toISOString());});
   if(f.dataset.path==='profile/avatar'&&d.get('file')?.size>2*1024*1024)throw Error('Profile photos must be 2 MB or smaller.');

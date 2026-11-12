@@ -108,3 +108,26 @@ test('admin demotion and one-use temporary passwords enforce access, expiry and 
   assert.equal((await reset(fourth.temporary_password)).status,403);
  }finally{await f.db.close();}
 });
+test('Google buttons can complete invite signup with chosen or Gmail-generated usernames',async()=>{
+ const f=await fixture();const {privateKey,publicKey}=await jose.generateKeyPair('RS256'),clientID='test.apps.googleusercontent.com';
+ const handle=createHandler({...f,google:googleVerifier(clientID,jose,publicKey)});
+ const signup=async(c,sub,fields,email='maker@gmail.com',verified=true)=>{
+  const ch=await c.request('auth/google/challenge',{mode:'login'});
+  const credential=await new jose.SignJWT({nonce:ch.nonce,sub,email,email_verified:verified}).setProtectedHeader({alg:'RS256'}).setIssuer('https://accounts.google.com').setAudience(clientID).setIssuedAt().setExpirationTime('5m').sign(privateKey);
+  return c.request('auth/google',{mode:'register',challenge:ch.challenge,credential,...fields});
+ };
+ try{
+  const a=client(handle),b=client(handle),c=client(handle);
+  assert.equal((await signup(a,'one',{username_mode:'custom',name:'Chosen',invite:'bad'})).status,403);
+  assert.equal((await signup(a,'one',{username_mode:'custom',name:'Chosen',invite:await f.invitation()})).status,200);
+  assert.equal((await a.request('state')).user.name,'Chosen');
+  assert.equal((await signup(b,'two',{username_mode:'custom',name:'chosen',invite:await f.invitation()})).status,409);
+  assert.equal((await signup(b,'two',{username_mode:'gmail',invite:await f.invitation()},'private@example.test')).status,400);
+  assert.equal((await signup(b,'two',{username_mode:'gmail',invite:await f.invitation()},'maker@gmail.com',false)).status,400);
+  assert.equal((await signup(b,'two',{username_mode:'gmail',invite:await f.invitation()})).status,200);
+  assert.equal((await b.request('state')).user.name,'maker');
+  assert.equal((await signup(c,'three',{username_mode:'gmail',invite:await f.invitation()})).status,200);
+  const state=await c.request('state');assert.equal(state.user.name,'maker_1');assert(!JSON.stringify(state).includes('@gmail.com'));
+  assert.equal((await c.request('profile/credentials',{name:'maker_1',password:'abcdef',confirm_password:'abcdef'})).status,200);
+ }finally{await f.db.close();}
+});

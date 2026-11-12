@@ -69,8 +69,16 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
      return reply({challenge,nonce,client_id:google.clientID});
     }
     const challenge=field(body,'challenge',64), identity=await google.verify(field(body,'credential',12000));
+    const registration={};
+    if(body.mode==='register'){
+     registration.register=true;registration.invite_hash=await digest(field(body,'invite',160));
+     registration.generated=body.username_mode==='gmail';
+     if(registration.generated&&!identity.gmailName)throw new APIError(400,'Choose a username: this Google account does not have a verified Gmail address.');
+     registration.name=registration.generated?identity.gmailName:field(body,'name',40);
+     registration.normalized=normalize(registration.name);
+    }
     const sessionToken=token();
-    await googleRPC('complete',{challenge_hash:await digest(challenge),nonce_hash:await digest(identity.nonce),subject:identity.subject,token_hash:await digest(sessionToken)},sessionHash);
+    await googleRPC('complete',{...registration,challenge_hash:await digest(challenge),nonce_hash:await digest(identity.nonce),subject:identity.subject,token_hash:await digest(sessionToken)},sessionHash);
     return reply({ok:true,session_token:sessionToken});
    }
    if(path==='auth/reset-password') {
