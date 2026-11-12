@@ -140,3 +140,12 @@ test('username sits beside settings as plain text and clears on sign-out',()=>{
  assert.equal(element('#header-username').textContent,'');
  assert.equal(element('#header-username').hidden,true);
 });
+test('each poll phase uses its own Benchy clock and members can vote for multiple topics',()=>{
+ const {run}=ui();
+ let html=run("round({id:3,title:'Poll',phase:'submissions',has_prevote:true,created_at:1000,vote_opens_at:2000,votes_close_at:3000,deadline:'2027-01-01T12:00:00Z'})");
+ assert.match(html,/data-start="1000000" data-end="2000000"/);assert.match(html,/1 · Topic collection/);assert.match(html,/rounds\/3\/topic/);assert.doesNotMatch(html,/delete-competition/);
+ run('s.topics=[{id:1,round_id:3,user_id:1,title:"First"},{id:2,round_id:3,user_id:1,title:"Second"}];s.votes=[{round_id:3,topic_id:1,user_id:1}]');
+ html=run("round({id:3,title:'Poll',phase:'topics',has_prevote:true,created_at:1000,vote_opens_at:2000,voting_started_at:2100,votes_close_at:3000,deadline:'2027-01-01T12:00:00Z'})");
+ assert.match(html,/data-start="2100000" data-end="3000000"/);assert.match(html,/Vote for as many topics/);assert.match(html,/<button disabled aria-label="Already voted/);assert.match(html,/<button >Vote/);assert.doesNotMatch(html,/data-path="rounds\/3\/topic"/);
+ run('s.user.admin=true');assert.match(run("round({id:3,title:'Done',phase:'completed',deadline:'2027-01-01T12:00:00Z'})"),/delete-competition/);
+});

@@ -49,12 +49,17 @@ test('PostgreSQL + Edge API: accounts, permissions and full competition lifecycl
   let tid=(await ok(crew,'state')).topics[0].id;
   assert.equal((await request(organizer,`rounds/${rid}/delete-topic`,{topic_id:tid})).status,403);
   assert.equal((await request(crew,`rounds/${rid}/vote`,{topic_id:tid})).status,403);
-  await ok(organizer,`rounds/${rid}/topic`,{title:'Waves'});
+  await ok(crew,`rounds/${rid}/topic`,{title:'Waves'});
+  const secondTopic=(await ok(crew,'state')).topics.find(t=>t.title==='Waves').id;
   await ok(organizer,`rounds/${rid}/open-voting`,{});
   assert.equal((await request(crew,`rounds/${rid}/topic`,{title:'Late'})).status,403);
   assert.equal((await request(crew,`rounds/${rid}/vote`,{topic_id:999})).status,400);
   await ok(crew,`rounds/${rid}/vote`,{topic_id:tid});await ok(crew,`rounds/${rid}/vote`,{topic_id:tid});
   assert.equal((await ok(crew,'state')).votes.length,1);
+  await ok(crew,`rounds/${rid}/vote`,{topic_id:secondTopic});
+  assert.equal((await ok(crew,'state')).votes.length,2);
+  assert.equal(typeof (await ok(crew,'state')).rounds[0].voting_started_at,'number');
+  await ok(organizer,`rounds/${rid}/vote`,{topic_id:tid});
   assert.equal((await request(crew,`rounds/${rid}/close-poll`,{admin:true})).status,403);
   await ok(organizer,`rounds/${rid}/close-poll`,{});
   state=await ok(organizer,'state');assert.equal(state.rounds[0].phase,'printing');assert.equal(state.rounds[0].topic,'Tiny boats');
@@ -79,6 +84,12 @@ test('PostgreSQL + Edge API: accounts, permissions and full competition lifecycl
   assert.equal((await request(crew,'entries/1/file',{})).status,403);
   state=await ok(organizer,'state');const serialized=JSON.stringify(state);
   assert(!serialized.includes('pbkdf2'));assert(!serialized.includes('token_hash'));assert(!serialized.includes('normalized'));
+  await ok(organizer,'rounds',{title:'Keep this competition',deadline});
+  const keep=(await ok(organizer,'state')).rounds.find(r=>r.id!==rid).id;
+  assert.equal((await request(crew,`rounds/${rid}/delete-competition`,{admin:true})).status,403);
+  await ok(organizer,`rounds/${rid}/delete-competition`,{});
+  state=await ok(organizer,'state');assert.deepEqual(state.rounds.map(r=>r.id),[keep]);
+  for(const key of ['topics','votes','entries','participants','winners','print_links'])assert.equal(state[key].filter(r=>r.round_id===rid).length,0);
   await ok(crew,'auth/logout',{});assert.equal((await request(crew,'state')).status,401);
   // Direct browser DB access must fail, including attempted use of service RPC.
   await db.exec('set role anon');

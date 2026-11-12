@@ -43,7 +43,7 @@ with db() as c:
     CREATE TABLE IF NOT EXISTS invites(code TEXT PRIMARY KEY);
     CREATE TABLE IF NOT EXISTS rounds(id INTEGER PRIMARY KEY, title TEXT, phase TEXT DEFAULT 'topics', topic TEXT DEFAULT '', deadline TEXT);
     CREATE TABLE IF NOT EXISTS topics(id INTEGER PRIMARY KEY, round_id INTEGER REFERENCES rounds, title TEXT, UNIQUE(round_id,title));
-    CREATE TABLE IF NOT EXISTS votes(round_id INTEGER REFERENCES rounds, user_id INTEGER REFERENCES users, topic_id INTEGER REFERENCES topics, PRIMARY KEY(round_id,user_id));
+    CREATE TABLE IF NOT EXISTS votes(round_id INTEGER REFERENCES rounds, user_id INTEGER REFERENCES users, topic_id INTEGER REFERENCES topics, PRIMARY KEY(round_id,user_id,topic_id));
     CREATE TABLE IF NOT EXISTS participants(round_id INTEGER REFERENCES rounds, user_id INTEGER REFERENCES users, status TEXT, PRIMARY KEY(round_id,user_id));
     CREATE TABLE IF NOT EXISTS entries(id INTEGER PRIMARY KEY, round_id INTEGER REFERENCES rounds, user_id INTEGER REFERENCES users, title TEXT, filename TEXT DEFAULT '', stored TEXT DEFAULT '', UNIQUE(round_id,user_id));
     CREATE TABLE IF NOT EXISTS winners(round_id INTEGER REFERENCES rounds, category TEXT, entry_id INTEGER REFERENCES entries, PRIMARY KEY(round_id,category));
@@ -66,7 +66,7 @@ with db() as c:
         raise RuntimeError('Existing usernames differ only by capitalization or Unicode normalization. Rename the conflicting accounts before starting.')
     for table, additions in {
         'rounds': [('creator_id','INTEGER REFERENCES users'), ('has_prevote','INTEGER NOT NULL DEFAULT 0'),
-                   ('vote_opens_at','REAL'), ('votes_close_at','REAL'), ('printing_started_at','REAL'),
+                   ('voting_started_at','REAL'), ('vote_opens_at','REAL'), ('votes_close_at','REAL'), ('printing_started_at','REAL'),
                    ('created_at','REAL NOT NULL DEFAULT 0')],
         'topics': [('user_id','INTEGER REFERENCES users')],
         'print_links': [('preview_image', "TEXT NOT NULL DEFAULT ''")],
@@ -74,12 +74,21 @@ with db() as c:
         columns = {r['name'] for r in c.execute(f'PRAGMA table_info({table})')}
         for column, declaration in additions:
             if column not in columns: c.execute(f'ALTER TABLE {table} ADD COLUMN {column} {declaration}')
+    # Upgrade the vote key without discarding existing votes.
+    vote_key=[r['name'] for r in sorted(c.execute('PRAGMA table_info(votes)'), key=lambda r:r['pk']) if r['pk']]
+    if vote_key == ['round_id','user_id']:
+        c.execute('ALTER TABLE votes RENAME TO votes_single_choice')
+        c.execute('CREATE TABLE votes(round_id INTEGER REFERENCES rounds, user_id INTEGER REFERENCES users, topic_id INTEGER REFERENCES topics, PRIMARY KEY(round_id,user_id,topic_id))')
+        c.execute('INSERT INTO votes SELECT round_id,user_id,topic_id FROM votes_single_choice')
+        c.execute('DROP TABLE votes_single_choice')
+    c.execute("UPDATE rounds SET voting_started_at=CASE WHEN vote_opens_at<=? THEN vote_opens_at ELSE created_at END WHERE phase='topics' AND voting_started_at IS NULL", (time.time(),))
     # Preserve votes when consolidating legacy duplicate topic spellings.
     seen = {}
     for t in c.execute('SELECT id,round_id,title FROM topics ORDER BY id').fetchall():
         key = (t['round_id'], topic_key(t['title']))
         if key in seen:
-            c.execute('UPDATE votes SET topic_id=? WHERE topic_id=?', (seen[key], t['id']))
+            c.execute('INSERT OR IGNORE INTO votes SELECT round_id,user_id,? FROM votes WHERE topic_id=?', (seen[key], t['id']))
+            c.execute('DELETE FROM votes WHERE topic_id=?', (t['id'],))
             c.execute('DELETE FROM topics WHERE id=?', (t['id'],))
         else: seen[key] = t['id']
     c.execute('CREATE UNIQUE INDEX IF NOT EXISTS topics_title_unique ON topics(round_id,title COLLATE TOPIC)')
@@ -110,7 +119,7 @@ def close_poll(c, r, now):
 
 def sync_rounds(c, now):
     for r in c.execute("SELECT * FROM rounds WHERE phase='submissions' AND vote_opens_at IS NOT NULL AND vote_opens_at<=?", (now,)).fetchall():
-        c.execute("UPDATE rounds SET phase='topics' WHERE id=?", (r['id'],))
+        c.execute("UPDATE rounds SET phase='topics',voting_started_at=? WHERE id=?", (r['vote_opens_at'],r['id']))
     for r in c.execute("SELECT * FROM rounds WHERE phase IN ('submissions','topics') AND votes_close_at IS NOT NULL AND votes_close_at<=?", (now,)).fetchall():
         close_poll(c, r, r['votes_close_at'])
     # Even manually managed polls cannot run beyond the competition deadline.
@@ -324,7 +333,12 @@ def round_action(rid,action):
         phase=r['phase']; payload=request.get_json(silent=True) or {}
         manager = bool(u['admin'] or r['creator_id']==u['id'])
         collecting = phase=='submissions' or (phase=='topics' and not r['has_prevote'])
-        if action=='topic' and collecting:
+        if action=='delete-competition' and u['admin']:
+            # Legacy SQLite tables do not have cascading foreign keys.
+            for table in ['print_links','winners','entries','participants','votes','topics']:
+                c.execute('DELETE FROM '+table+' WHERE round_id=?',(rid,))
+            c.execute('DELETE FROM rounds WHERE id=?',(rid,))
+        elif action=='topic' and collecting:
             title = ' '.join(field('title').split())
             try: c.execute('INSERT INTO topics(round_id,title,user_id) VALUES(?,?,?)',(rid,title,u['id']))
             except sqlite3.IntegrityError: abort(409,'That topic has already been proposed, regardless of capitalization or spacing.')
@@ -337,11 +351,11 @@ def round_action(rid,action):
         elif action=='vote' and phase=='topics':
             tid=payload.get('topic_id')
             if not c.execute('SELECT 1 FROM topics WHERE id=? AND round_id=?',(tid,rid)).fetchone(): abort(400)
-            c.execute('INSERT OR REPLACE INTO votes VALUES(?,?,?)',(rid,u['id'],tid))
+            c.execute('INSERT OR IGNORE INTO votes VALUES(?,?,?)',(rid,u['id'],tid))
         elif action=='open-voting' and manager and phase=='submissions':
             if not c.execute('SELECT 1 FROM topics WHERE round_id=?',(rid,)).fetchone(): abort(400,'Add at least one topic before opening voting.')
             if r['votes_close_at'] and r['votes_close_at']<=time.time(): abort(400,'The scheduled poll closing time has passed.')
-            c.execute("UPDATE rounds SET phase='topics' WHERE id=?",(rid,))
+            c.execute("UPDATE rounds SET phase='topics',voting_started_at=? WHERE id=?",(time.time(),rid))
         elif action in ('close-poll','advance') and manager and phase=='topics':
             close_poll(c, r, time.time())
         elif action=='resolve-tie' and manager and phase=='tie':
@@ -351,7 +365,7 @@ def round_action(rid,action):
             c.execute("UPDATE rounds SET phase='printing',topic=?,printing_started_at=? WHERE id=?",(winner['title'],time.time(),rid))
         elif action=='reopen-topics' and manager and phase=='no_topics':
             if timestamp(r['deadline'])<=time.time(): abort(400,'This competition has ended. Create a new round.')
-            c.execute("UPDATE rounds SET phase='submissions',has_prevote=1,vote_opens_at=NULL,votes_close_at=NULL WHERE id=?",(rid,))
+            c.execute("UPDATE rounds SET phase='submissions',has_prevote=1,vote_opens_at=NULL,votes_close_at=NULL,voting_started_at=NULL WHERE id=?",(rid,))
         elif action=='archive-empty' and manager and phase=='no_topics':
             c.execute("UPDATE rounds SET phase='completed' WHERE id=?",(rid,))
         elif action=='participate' and phase in ('submissions','topics','tie','printing') and time.time()<timestamp(r['deadline']):

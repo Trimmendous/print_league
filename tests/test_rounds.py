@@ -189,3 +189,18 @@ class Rounds(unittest.TestCase):
         release=self.host.get('/api/state').json['releases'][0]
         self.assertEqual(release['version'],'0.0.0')
         self.assertEqual(release['title'],'Initial Build')
+
+    def test_multiple_topics_and_votes_and_admin_deletion(self):
+        rid=self.create()
+        self.assertEqual(self.topic(self.maker,'First').status_code,200)
+        self.assertEqual(self.topic(self.maker,'Second').status_code,200)
+        self.assertEqual(self.post(self.host,f'rounds/{rid}/open-voting',{}).status_code,200)
+        for tid in [1,2,1]:
+            self.assertEqual(self.post(self.maker,f'rounds/{rid}/vote',{'topic_id':tid}).status_code,200)
+        votes=self.maker.get('/api/state').json['votes']
+        self.assertEqual(len(votes),2)
+        self.assertEqual(self.topic(self.maker,'Too late').status_code,403)
+        self.assertEqual(self.post(self.maker,f'rounds/{rid}/delete-competition',{}).status_code,403)
+        self.assertEqual(self.post(self.host,f'rounds/{rid}/delete-competition',{}).status_code,200)
+        for table in ['rounds','topics','votes']:
+            self.assertEqual(self.host.get('/api/state').json[table],[])

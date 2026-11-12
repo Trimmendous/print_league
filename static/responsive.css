@@ -145,3 +145,5 @@ input,select,textarea{scroll-margin-block:24px}
 @media(max-width:720px){.auth-columns{grid-template-columns:minmax(0,1fr);gap:0}.auth-heading{padding-top:22px}#invite-share{grid-template-columns:minmax(0,1fr)}#invite-share button{justify-self:start}.auth-panel{padding:22px}.auth-panel h2{font-size:24px}}
 
 body.signed-out{min-height:100dvh;display:flex;flex-direction:column;padding-bottom:0}body.signed-out main{width:100%;flex:1}body.signed-out>.site-header{width:100%}body.signed-out>.site-footer{position:static;width:100%}@media(max-width:720px){.auth-columns.joining #join-panel{order:-1}}
+
+button.danger-button{background:transparent;color:#a43b2e;border-color:#c88c83}button.danger-button:hover{background:#a43b2e;color:white}.topic-actions button:disabled{cursor:default}
