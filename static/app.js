@@ -8,7 +8,8 @@ const form=(path,contents)=>`<form data-path="${path}">${contents.replace(/<inpu
 const input=(n,p,type='text')=>`<input name="${n}" aria-label="${p}" placeholder="${p}" type="${type}" required>`;
 const btn=(text)=>`<button>${text}</button>`;
 async function post(path,data){return window.leagueAPI.request(path,{method:'POST',headers:{'X-CSRF-Token':s.csrf,...(data instanceof FormData?{}:{'Content-Type':'application/json'})},body:data instanceof FormData?data:JSON.stringify(data)});}
-async function load(){s=await window.leagueAPI.request('state');serverOffset=(s.server_now?s.server_now*1000:Date.now())-Date.now();render();}
+async function readState(){const state=await window.leagueAPI.request('state');if(location.hash==='#admin'&&state.user?.admin&&state.capabilities?.admin_management)state.admin=await window.leagueAPI.request('admin');return state;}
+async function load(){s=await readState();serverOffset=(s.server_now?s.server_now*1000:Date.now())-Date.now();render();}
 const avatar=u=>u.avatar?`<img class="avatar" ${window.LEAGUE_CONFIG?`data-avatar="${u.id}" data-version="${esc(u.avatar)}"`:`src="/api/users/${u.id}/avatar?v=${encodeURIComponent(u.avatar)}"`} alt="${esc(u.display_name||u.name)}’s profile photo" width="74" height="74">`:`<div class="avatar" aria-hidden="true">${esc((u.display_name||u.name).slice(0,1).toUpperCase())}</div>`;
 const dateLabel=value=>{if(!value)return '';const d=new Date(typeof value==='number'?value*1000:value.length===10?value+'T23:59:59Z':value);return Number.isNaN(d.getTime())?'':d.toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});};
 const deadlineMs=r=>new Date(r.deadline?.length===10?r.deadline+'T23:59:59Z':r.deadline).getTime();
@@ -39,8 +40,8 @@ function winnersPage(){
 const trophyImage='<img src="/static/assets/benchy-trophy.png" alt="" width="720" height="860" loading="lazy">';
 function winsFor(id){return s.winners.filter(w=>s.rounds.some(r=>r.id===w.round_id&&r.phase==='completed')&&s.entries.some(e=>e.id===w.entry_id&&e.user_id===id));}
 function tally(id){const wins=winsFor(id);return `<div class="tally" aria-label="${wins.length} ${wins.length===1?'win':'wins'}">${wins.length?Array.from({length:Math.min(wins.length,8)},()=>`<span class="tally-mark">${trophyImage}</span>`).join(''):'<span class="no-trophies">Your next great print starts here.</span>'}${wins.length>8?`<span>+${wins.length-8}</span>`:''}<strong>${wins.length} ${wins.length===1?'win':'wins'}</strong></div>`;}
-function recoveryPanel(){return s.capabilities?.recovery?`<section class="card"><h2>Account recovery</h2><p class="muted">Save recovery codes so you can reset your password without an email address. New codes replace the old set.</p>${form('profile/recovery-codes','<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><button>Generate recovery codes</button>')}<pre id="recovery-codes" class="recovery-codes" hidden></pre></section>`:'';}
-function profile(){return `<a class="back-link" href="#">← Back to the fleet</a><div class="section-heading"><div><p class="eyebrow">YOUR PLACE IN THE CREW</p><h1 class="page-title">Your profile</h1></div></div><div class="profile-grid"><aside class="card profile-card">${avatar(s.user)}<h2>${esc(s.user.display_name||s.user.name)}</h2><p class="muted">@${esc(s.user.name)}</p><span class="badge">${s.user.admin?'Organizer':'Crew member'}</span>${s.capabilities?.avatars===false?'<p class="muted small">Photo uploads are being migrated.</p>':form('profile/avatar','<label>Profile photo<input type="file" name="file" accept="image/jpeg,image/png,image/webp" required><small>JPEG, PNG, or WebP · up to 2 MB and 16 megapixels. Cropped to a 512 × 512 square.</small></label><button>Upload photo</button>')}<h3>Your trophy shelf</h3>${tally(s.user.id)}<p class="muted small">One trophy for each category won in a completed round.</p></aside><div><section class="card"><p class="eyebrow">CREW DETAILS</p><h2>What should we call you?</h2><p class="muted">Your display name appears on entries, votes, and the trophy shelf.</p>${form('profile',`<label>Display name<input name="display_name" value="${esc(s.user.display_name||s.user.name)}" maxlength="80" autocomplete="nickname" required></label><button>Save profile</button>`)}</section><section class="card"><p class="eyebrow">SIGN-IN DETAILS</p><h2>${s.user.has_password?'Username & password':'Add a password'}</h2><p class="muted">${s.user.has_password?'Use your current password to update your sign-in details. Other sessions will be signed out.':'Add a username and password to this account so you can also sign in without Google. A recent Google sign-in is required.'}</p>${form('profile/credentials',`<label>Username<input name="name" value="${esc(s.user.name)}" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label>${s.user.has_password?'<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>':''}<label>New password<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" placeholder="At least 12 characters" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><button>${s.user.has_password?'Update sign-in details':'Add username & password'}</button>`)}</section></div></div>`;}
+function recoveryPanel(){return s.capabilities?.recovery&&s.user.has_password?`<section class="card"><h2>Account recovery</h2><p class="muted">Save recovery codes so you can reset your password without an email address. New codes replace the old set.</p>${form('profile/recovery-codes','<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><button>Generate recovery codes</button>')}<pre id="recovery-codes" class="recovery-codes" hidden></pre></section>`:'';}
+function profile(){return `<a class="back-link" href="#">← Back to the fleet</a><div class="section-heading"><div><p class="eyebrow">YOUR PLACE IN THE CREW</p><h1 class="page-title">Your profile</h1></div></div><div class="profile-grid"><aside class="card profile-card">${avatar(s.user)}<h2>${esc(s.user.display_name||s.user.name)}</h2><p class="muted">${s.user.name?'@'+esc(s.user.name):'Google sign-in'}</p><span class="badge">${s.user.admin?'Organizer':'Crew member'}</span>${s.capabilities?.avatars===false?'<p class="muted small">Photo uploads are being migrated.</p>':form('profile/avatar','<label>Profile photo<input type="file" name="file" accept="image/jpeg,image/png,image/webp" required><small>JPEG, PNG, or WebP · up to 2 MB and 16 megapixels. Cropped to a 512 × 512 square.</small></label><button>Upload photo</button>')}<h3>Your trophy shelf</h3>${tally(s.user.id)}<p class="muted small">One trophy for each category won in a completed round.</p></aside><div><section class="card"><p class="eyebrow">CREW DETAILS</p><h2>What should we call you?</h2><p class="muted">Your display name appears on entries, votes, and the trophy shelf.</p>${form('profile',`<label>Display name<input name="display_name" value="${esc(s.user.display_name||s.user.name)}" maxlength="80" autocomplete="nickname" required></label><button>Save profile</button>`)}</section><section class="card"><p class="eyebrow">SIGN-IN DETAILS</p><h2>${s.user.has_password?'Username & password':'Add a password'}</h2><p class="muted">${s.user.has_password?'Use your current password to update your sign-in details. Other sessions will be signed out.':'Add a username and password to this account so you can also sign in without Google. A recent Google sign-in is required.'}</p>${form('profile/credentials',`<label>Username<input name="name" value="${esc(s.user.name)}" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label>${s.user.has_password?'<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>':''}<label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" placeholder="At least 6 characters" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>${s.user.has_password?'Update sign-in details':'Add username & password'}</button>`)}</section></div></div>`;}
 const boardStages=[['ideas','On the horizon','Ideas & possibilities'],['progress','Under way','In progress'],['review','At the dock','In review']];
 function featuresPage(){return `<div class="section-heading"><div><p class="eyebrow">A COURSE WE CHART TOGETHER</p><h1 class="page-title">What’s on the horizon?</h1><p class="muted">Bring an idea aboard. Follow it from a first thought to its final checks.</p></div><span class="section-number">⚓</span></div><details class="card idea-compose"><summary>+ Float an idea</summary>${form('features','<label>Your idea<input name="title" maxlength="120" placeholder="What would make the league better?" required></label><label>A little more detail<textarea name="description" maxlength="1000" rows="3" placeholder="How would it help the crew?"></textarea></label><button>Add to the horizon</button>')}<p class="muted small">Everyone can suggest ideas. Admins move them as work progresses.</p></details><div class="feature-board">${boardStages.map(([stage,title,subtitle],index)=>{
  const ideas=(s.feature_ideas||[]).filter(i=>i.stage===stage);
@@ -65,6 +66,42 @@ function printLinks(r, mine){
  if(r.phase!=='completed')return '';
  return `<section class="print-links"><h3>From the crew’s print beds</h3>${links.map(printCard).join('')||'<p class="muted small">No print links shared yet.</p>'}${mine?.status==='in'&&awarded?`<details class="share-link"><summary>+ Share a link to your print</summary>${form(`rounds/${r.id}/links`,'<label>Print title (optional)<input name="title" maxlength="120" placeholder="What did you make?"></label><p class="muted small">Share a MakerWorld or Printables model link so everyone can find the files.</p><label>Print URL<input name="url" type="url" maxlength="2048" placeholder="https://…" required></label><label>Preview image URL (optional)<input name="preview_image" type="url" maxlength="2048" placeholder="https://makerworld.bblmw.com/…"><small>Paste the model photo’s image address from MakerWorld or Printables. No file upload needed.</small></label><button>Share print link</button>')}</details>`:''}</section>`;
 }
+
+function joinInvite(){try{return location.hash.startsWith('#join=')?decodeURIComponent(location.hash.slice(6)):'';}catch{return '';}}
+function adminPage(){
+ const admin=s.admin;
+ if(!admin)return '<section class="card"><h1>Admin</h1><p>Loading members…</p></section>';
+ const members=admin.members||[];
+ return `<div class="section-heading"><div><p class="eyebrow">ORGANIZER CONTROLS</p><h1 class="page-title">Admin</h1></div></div><div class="admin-stats"><section class="card"><strong>${admin.member_count}</strong><span>Members</span></section><section class="card"><strong>${admin.admin_count}</strong><span>Admins</span></section><section class="card"><strong>${admin.pending_invites}</strong><span>Unused invitations</span></section></div><section class="card"><h2>Invite someone aboard</h2><p>Each invitation works once and expires after seven days.</p>${form('invites',btn('Create invitation'))}<p id="invite" role="status"></p><div id="invite-share" hidden><label>Signup link<input id="invite-link" readonly></label><button type="button" id="copy-invite">Copy invite link</button></div></section><section class="card"><h2>Crew members</h2><p>Admins can manage competitions, invitations, and member access.</p>${members.map(u=>`<div class="row"><div><strong>${esc(u.display_name||u.name||'Member')}</strong><small class="member-detail">${u.name?'@'+esc(u.name):'Google account'} · ${u.admin?'Admin':'Member'}</small></div>${u.admin?'<span class="badge">Admin</span>':form('admin/promote',`<input type="hidden" name="member_id" value="${u.id}"><button>Make admin</button>`)}</div>`).join('')}</section>`;
+}
+function googleForm(mode){
+ if(!s.capabilities?.google_client_id)return '';
+ const fields=mode==='register'?'<label>Display name<input name="display_name" maxlength="80" autocomplete="nickname" required></label><label>Invitation code<input name="invite" autocomplete="off" required></label>':'';
+ return `<form data-google="${mode}" class="google-signin">${fields}<button type="submit">${mode==='link'?'Link Google':mode==='register'?'Join with Google':'Sign in with Google'}</button><div data-google-button></div></form>`;
+}
+function googleProfile(){
+ if(!s.capabilities?.google_client_id)return '';
+ return `<section class="card"><h2>Google sign-in</h2><p>${s.user.google_linked?'Google is linked to this membership.':'Link Google to sign in to this same membership. Your entries and wins stay together.'}</p>${s.user.google_linked?(s.user.has_password?form('profile/google/unlink','<button class="quiet-button">Disconnect Google</button>'):'<p class="muted">Add a username and password before disconnecting Google.</p>'):googleForm('link')}</section>`;
+}
+let googleLibrary;
+function loadGoogle(){
+ if(window.google?.accounts?.id)return Promise.resolve();
+ if(!googleLibrary)googleLibrary=new Promise((resolve,reject)=>{const script=document.createElement('script');script.src='https://accounts.google.com/gsi/client';script.async=true;script.onload=resolve;script.onerror=()=>{googleLibrary=null;script.remove();reject(Error('Google sign-in could not load. Please try again.'));};document.head.appendChild(script);});
+ return googleLibrary;
+}
+async function startGoogle(f){
+ const body=Object.fromEntries(new FormData(f));body.mode=f.dataset.google;
+ const challenge=await post('auth/google/challenge',body);await loadGoogle();
+ document.querySelectorAll('[data-google-button]').forEach(slot=>slot.replaceChildren());
+ window.google.accounts.id.initialize({client_id:challenge.client_id,nonce:challenge.nonce,auto_select:false,ux_mode:'popup',use_fedcm_for_button:true,callback:async response=>{
+  try{await post('auth/google',{challenge:challenge.challenge,credential:response.credential});if(body.mode!=='link')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
+  catch(error){document.querySelector('#message').textContent=error.message;f.querySelector('[data-google-button]')?.replaceChildren();}
+ }});
+ window.google.accounts.id.renderButton(f.querySelector('[data-google-button]'),{type:'standard',theme:'outline',size:'large',text:body.mode==='register'?'signup_with':'signin_with'});
+ document.querySelector('#message').textContent='Use the Google button to choose your account.';
+}
+root.addEventListener('click',async e=>{if(e.target.id==='copy-invite'){const field=document.querySelector('#invite-link');try{await navigator.clipboard.writeText(field.value);document.querySelector('#message').textContent='Invitation link copied.';}catch{field.select();document.querySelector('#message').textContent='Copy the selected invitation link.';}}});
+
 const avatarBlobs=new Map();
 async function hydrateAvatars(){
  if(!window.LEAGUE_CONFIG)return;
@@ -78,11 +115,12 @@ async function hydrateAvatars(){
  const valid=new Set((s.users||[]).filter(u=>u.avatar).map(u=>u.id+':'+u.avatar));
  for(const [key,entry] of avatarBlobs)if(!valid.has(key)){if(entry.url)URL.revokeObjectURL(entry.url);avatarBlobs.delete(key);}
 }
-function render(){renderContent();void hydrateAvatars();}
+function render(){renderContent();void hydrateAvatars();const invite=joinInvite();if(!s.user&&invite)document.querySelectorAll('input[name=invite]').forEach(input=>{input.value=invite;const details=input.closest('details');if(details)details.open=true;});}
 function renderContent(){
  document.querySelector('#settings').hidden=!s.user;
+ document.querySelector('#admin-link').hidden=!s.user?.admin||!s.capabilities?.admin_management;
  const username=document.querySelector('#header-username');
- username.hidden=!s.user;username.textContent=s.user?.name||'';
+ username.hidden=!s.user;username.textContent=s.user?.name||s.user?.display_name||'';
  const release=s.releases?.[0];if(release)document.querySelector('#brand-version').textContent=`v${release.version} · ${release.voyage}`;
  document.querySelector('#page-tabs').hidden=!s.user;
  document.querySelector('#tab-home').setAttribute('aria-current',location.hash===''||location.hash==='#'?'page':'false');
@@ -92,8 +130,9 @@ function renderContent(){
  document.querySelector('#tab-credits').setAttribute('aria-current',location.hash==='#credits'?'page':'false');
  const isProfile=s.user&&location.hash==='#profile';
  document.querySelector('#intro').hidden=!!s.user;
- if(!s.user){root.innerHTML=`<section class="card auth"><div><p class="eyebrow">WELCOME ABOARD</p><h2>Join your crew.</h2><p class="muted">An invitation gets you aboard.<br>Your next print makes a splash.</p></div><div>${form('auth/login','<label>Username<input name="name" placeholder="Your username" autocomplete="username" required></label><label>Password<input name="password" type="password" placeholder="Your password" autocomplete="current-password" required></label>'+btn('Sign in →'))}<details class="join"><summary>Have an invitation? Join the fleet</summary>${form('auth/register','<label>Choose a username<input name="name" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label><label>Password<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" placeholder="At least 12 characters" required></label><label>Invitation code<input name="invite" autocomplete="off" required></label>'+btn('Create account'))}</details>${s.capabilities?.recovery?`<details class="join"><summary>Recover your account</summary>${form('auth/recover','<label>Username<input name="name" autocomplete="username" required></label><label>Recovery code<input name="recovery_code" autocomplete="off" required></label><label>New password<input name="password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="12" maxlength="256" autocomplete="new-password" required></label><button>Reset password</button>')}</details>`:''}</div></section>`;return;}
- if(isProfile){root.innerHTML=profile()+recoveryPanel();return;}
+ if(!s.user){root.innerHTML=`<section class="card auth"><div><p class="eyebrow">WELCOME ABOARD</p><h2>Join your crew.</h2><p class="muted">An invitation gets you aboard.<br>Your next print makes a splash.</p></div><div>${form('auth/login','<label>Username<input name="name" placeholder="Your username" autocomplete="username" required></label><label>Password<input name="password" type="password" placeholder="Your password" autocomplete="current-password" required></label>'+btn('Sign in →'))}${googleForm('login')}<details class="join"><summary>Have an invitation? Join the fleet</summary>${googleForm('register')}${form('auth/register','<label>Choose a username<input name="name" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label><label>Password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" placeholder="At least 6 characters" required></label><label>Confirm password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Invitation code<input name="invite" autocomplete="off" required></label>'+btn('Create account'))}</details>${s.capabilities?.recovery?`<details class="join"><summary>Recover your account</summary>${form('auth/recover','<label>Username<input name="name" autocomplete="username" required></label><label>Recovery code<input name="recovery_code" autocomplete="off" required></label><label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>Reset password</button>')}</details>`:''}</div></section>`;return;}
+ if(isProfile){root.innerHTML=profile()+googleProfile()+recoveryPanel();return;}
+ if(location.hash==='#admin'){root.innerHTML=s.user.admin?adminPage():'<section class="card"><h1>Administrator access required</h1></section>';return;}
  if(location.hash==='#credits'){root.innerHTML=creditsPage();return;}
  if(location.hash==='#features'){root.innerHTML=featuresPage();return;}
  if(location.hash==='#changelog'){root.innerHTML=changelogPage();return;}
@@ -141,12 +180,13 @@ function round(r){
 root.addEventListener('submit',async e=>{
  e.preventDefault();const f=e.target,b=e.submitter||f.querySelector('button:not([type="button"])');b.disabled=true;
  try{
+  if(f.dataset.google){await startGoogle(f);return;}
   const d=new FormData(f);
   f.querySelectorAll('input[type="datetime-local"]').forEach(field=>{if(field.value&&!field.disabled)d.set(field.name,new Date(field.value).toISOString());});
   if(f.dataset.path==='profile/avatar'&&d.get('file')?.size>2*1024*1024)throw Error('Profile photos must be 2 MB or smaller.');
   const out=await post(f.dataset.path,f.querySelector('[type=file]')?d:Object.fromEntries(d));
   await load();document.querySelector('#message').textContent='Saved.';
-  if(out.code)document.querySelector('#invite').textContent='Single-use invitation: '+out.code;
+  if(out.code){document.querySelector('#invite').textContent='Single-use invitation: '+out.code;const link=document.querySelector('#invite-link');if(link){link.value=location.origin+(window.LEAGUE_CONFIG?.basePath||'/')+'#join='+encodeURIComponent(out.code);document.querySelector('#invite-share').hidden=false;}}
   if(out.recovery_codes){const target=document.querySelector('#recovery-codes');target.hidden=false;target.textContent=out.recovery_codes.join('\n');document.querySelector('#message').textContent='Save these recovery codes privately. Each works once.';}
  }catch(err){document.querySelector('#message').textContent=err.message;}finally{b.disabled=false;}
 });
@@ -163,7 +203,7 @@ root.addEventListener('change',e=>{
  }
 });
 document.querySelector('#logout').onclick=async()=>{try{await post('auth/logout',{});document.querySelector('#settings').open=false;location.hash='';await load();document.querySelector('#message').textContent='Signed out.';}catch(err){document.querySelector('#message').textContent=err.message;}};
-window.addEventListener('hashchange',()=>{document.querySelector('#settings').open=false;document.querySelector('#message').textContent='';if(s)render();});
+window.addEventListener('hashchange',()=>{document.querySelector('#settings').open=false;document.querySelector('#message').textContent='';if(s){if(location.hash==='#admin')load().catch(e=>document.querySelector('#message').textContent=e.message);else render();}});
 document.addEventListener('click',e=>{if(!e.target.closest('#settings'))document.querySelector('#settings').open=false;});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelector('#settings').open=false;document.querySelector('#settings summary').focus();}});
 let availabilityTimer;
@@ -190,10 +230,10 @@ let refreshing=false;
 setInterval(async()=>{
  if(!s?.user||document.visibilityState!=='visible'||refreshing)return;
  // Preserve unfinished forms while checking deadlines and vote changes.
- if(document.querySelector('#recovery-codes:not([hidden])')||root.querySelector('form[data-dirty]')||root.contains(document.activeElement)&&document.activeElement.closest('form'))return;
+ if(document.querySelector('#invite-share:not([hidden])')||document.querySelector('[data-google-button]:not(:empty)')||document.querySelector('#recovery-codes:not([hidden])')||root.querySelector('form[data-dirty]')||root.contains(document.activeElement)&&document.activeElement.closest('form'))return;
  refreshing=true;
  try{
-  const next=await window.leagueAPI.request('state');serverOffset=(next.server_now*1000)-Date.now();
+  const next=await readState();serverOffset=(next.server_now*1000)-Date.now();
   const changed=JSON.stringify({...s,server_now:0})!==JSON.stringify({...next,server_now:0});s=next;if(changed)render();
  }catch{}finally{refreshing=false;}
 },10000);

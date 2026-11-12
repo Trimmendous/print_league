@@ -12,5 +12,12 @@ export async function testDatabase() {
    if(match)throw new APIError(Number(match[1]),match[2]);throw error;
   }
  };
- return {db,rpc};
+ const otherRPC=name=>async(operation,payload={},session_hash='')=>{
+  try {
+   const params=name==='league_admin'?[session_hash,operation,JSON.stringify(payload)]:[operation,JSON.stringify(payload),session_hash];
+   const call=name==='league_admin'?'$1,$2,$3::jsonb':'$1,$2::jsonb,$3';
+   return (await db.query(`select public.${name}(${call}) as result`,params)).rows[0].result;
+  }catch(error){const match=/^(\d{3})\|(.+)$/.exec(error.message);if(match)throw new APIError(Number(match[1]),match[2]);throw error;}
+ };
+ return {db,rpc,adminRPC:otherRPC('league_admin'),googleRPC:otherRPC('league_google')};
 }

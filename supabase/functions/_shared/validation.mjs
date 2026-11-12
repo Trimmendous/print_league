@@ -5,7 +5,7 @@ export function field(body,key,max=160) {
  if(typeof value!=='string'||!value.trim()||Array.from(value.trim()).length>max) throw new APIError(400,'Invalid '+key);
  return value.trim();
 }
-export function password(body,key='password',minimum=12) {
+export function password(body,key='password',minimum=6) {
  const value=body[key];
  if(typeof value!=='string'||Array.from(value).length<minimum||Array.from(value).length>256) throw new APIError(400,`Use ${minimum}–256 characters for your password.`);
  return value;

@@ -136,3 +136,5 @@ input,select,textarea{scroll-margin-block:24px}
 }
 
 .recovery-codes { white-space: pre-wrap; overflow-wrap: anywhere; font-size: .85rem; }
+
+.admin-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1rem}.admin-stats strong{display:block;font-size:2rem}.admin-stats span,.member-detail{display:block}.member-detail{margin-top:.35rem}#invite{overflow-wrap:anywhere}#invite-link{width:100%}.google-signin{margin-block:1rem}[data-google-button]{margin-top:.75rem;max-width:100%;overflow:hidden}@media(max-width:500px){.admin-stats{grid-template-columns:1fr}.admin-stats .card{display:flex;align-items:center;gap:1rem}}

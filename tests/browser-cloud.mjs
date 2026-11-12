@@ -5,7 +5,7 @@ import {testDatabase} from './helpers/database.mjs';
 import {createHandler} from '../supabase/functions/league-api/handler.mjs';
 import {digest,token} from '../supabase/functions/_shared/passwords.mjs';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
-const {db,rpc}=await testDatabase();const handle=createHandler({rpc});
+const {db,rpc,adminRPC,googleRPC}=await testDatabase();const handle=createHandler({rpc,adminRPC,googleRPC});
 const browser=await chromium.launch({headless:true});
 try {
  const invite=token();await db.query("insert into league_private.invites(token_hash,expires_at,grants_admin) values($1,now()+interval '1 day',true)",[await digest(invite)]);
@@ -23,8 +23,14 @@ try {
  await page.goto('https://trimmendous.github.io/print_league/');
  await page.getByText('Have an invitation? Join the fleet').click();
  const signup=page.locator('form[data-path="auth/register"]');
- await signup.locator('[name=name]').fill('BrowserCaptain');await signup.locator('[name=password]').fill('browser-test-password');await signup.locator('[name=invite]').fill(invite);await signup.getByRole('button',{name:'Create account',exact:true}).click();
+ await signup.locator('[name=name]').fill('BrowserCaptain');await signup.locator('[name=password]').fill('browser-test-password');await signup.locator('[name=confirm_password]').fill('browser-test-password');await signup.locator('[name=invite]').fill(invite);await signup.getByRole('button',{name:'Create account',exact:true}).click();
  await page.getByRole('heading',{name:'On the workbench'}).waitFor();
+ await page.locator('#settings summary').click();await page.locator('#admin-link').click();
+ await page.getByRole('heading',{name:'Admin',exact:true}).waitFor();
+ assert.match(await page.locator('.admin-stats').textContent(),/1Members/);
+ await page.getByRole('button',{name:'Create invitation'}).click();await page.locator('#invite-share:not([hidden])').waitFor();
+ assert.match(await page.locator('#invite-link').inputValue(),/#join=[a-f0-9]{64}$/);
+ const unprivileged=await rpc('state',{},'invalid').catch(()=>null);assert.equal(unprivileged,null);
  await page.goto('https://trimmendous.github.io/print_league/#profile');
  await page.getByRole('heading',{name:'Account recovery',exact:true}).waitFor();
  const recovery=page.locator('form[data-path="profile/recovery-codes"]');await recovery.locator('[name=current_password]').fill('browser-test-password');await recovery.getByRole('button',{name:'Generate recovery codes'}).click();

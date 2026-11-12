@@ -188,7 +188,8 @@ def auth(action):
     name=field('name',40); password=field('password',256)
     with db() as c:
         if action=='register':
-            if len(password)<12: abort(400,'Use at least 12 characters for your password.')
+            if password != request.json.get('confirm_password'): abort(400, 'Passwords do not match.')
+            if len(password)<6: abort(400,'Use at least 6 characters for your password.')
             # Atomic invite consumption prevents reuse during simultaneous requests.
             c.execute('BEGIN IMMEDIATE')
             if c.execute('DELETE FROM invites WHERE code=?',(field('invite'),)).rowcount!=1: abort(403,'Invalid or used invite.')
@@ -260,7 +261,7 @@ def credentials():
     uid = user()['id']
     name = field('name', 40)
     password = field('password', 256)
-    if len(password) < 12: abort(400, 'Use at least 12 characters for your password.')
+    if len(password) < 6: abort(400, 'Use at least 6 characters for your password.')
     if password != request.json.get('confirm_password'): abort(400, 'Passwords do not match.')
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
@@ -474,8 +475,8 @@ if __name__=='__main__':
     import argparse, getpass
     p=argparse.ArgumentParser(); p.add_argument('--create-admin'); args=p.parse_args()
     if args.create_admin:
-        password=getpass.getpass('Admin password (12+ characters): ')
-        if len(password)<12: raise SystemExit('Password too short')
+        password=getpass.getpass('Admin password (6+ characters): ')
+        if len(password)<6: raise SystemExit('Password too short')
         with db() as c: c.execute('INSERT INTO users(name,password,admin) VALUES(?,?,1)',(args.create_admin,generate_password_hash(password)))
         print('Administrator created.')
     else:

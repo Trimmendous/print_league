@@ -23,15 +23,15 @@ class Accounts(unittest.TestCase):
 
     def test_case_insensitive_registration_is_atomic(self):
         guest=app.test_client()
-        response=self.post(guest,'auth/register',{'name':'cApTaIn','password':'another-password','invite':'test-invite'})
+        response=self.post(guest,'auth/register',{'name':'cApTaIn','password':'another-password','confirm_password':'another-password','invite':'test-invite'})
         self.assertEqual(response.status_code,409)
         with db() as c: self.assertIsNotNone(c.execute('SELECT 1 FROM invites WHERE code=?',('test-invite',)).fetchone())
         self.assertFalse(guest.get('/api/username-availability?name=CAPTAIN').json['available'])
         self.assertTrue(self.client.get('/api/username-availability?name=captain').json['available'])
         # Fullwidth and case variants normalize to the same username.
-        self.assertEqual(self.post(guest,'auth/register',{'name':'ＣＡＰＴＡＩＮ','password':'another-password','invite':'test-invite'}).status_code,409)
-        self.assertEqual(self.post(guest,'auth/register',{'name':'Deckhand','password':'another-password','invite':'test-invite'}).status_code,200)
-        self.assertEqual(self.post(app.test_client(),'auth/register',{'name':'Other','password':'another-password','invite':'test-invite'}).status_code,403)
+        self.assertEqual(self.post(guest,'auth/register',{'name':'ＣＡＰＴＡＩＮ','password':'another-password','confirm_password':'another-password','invite':'test-invite'}).status_code,409)
+        self.assertEqual(self.post(guest,'auth/register',{'name':'Deckhand','password':'another-password','confirm_password':'another-password','invite':'test-invite'}).status_code,200)
+        self.assertEqual(self.post(app.test_client(),'auth/register',{'name':'Other','password':'another-password','confirm_password':'another-password','invite':'test-invite'}).status_code,403)
 
     def test_display_name_and_password_rotation(self):
         other=app.test_client()

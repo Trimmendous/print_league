@@ -24,14 +24,14 @@ test('PostgreSQL + Edge API: accounts, permissions and full competition lifecycl
  try {
   assert.equal((await ok(guest,'state')).user,null);
   assert.equal((await request(guest,'rounds',{title:'Forged',admin:true})).status,401);
-  assert.equal((await request(guest,'auth/register',{name:'Captain',password:pass,invite:'invalid'})).status,403);
-  const invite=await seedInvite();await ok(organizer,'auth/register',{name:'Captain',password:pass,invite,admin:true});
+  assert.equal((await request(guest,'auth/register',{name:'Captain',password:pass,confirm_password:pass,invite:'invalid'})).status,403);
+  const invite=await seedInvite();await ok(organizer,'auth/register',{name:'Captain',password:pass,confirm_password:pass,invite,admin:true});
   let state=await ok(organizer,'state');assert.equal(state.user.admin,false);
   await db.query('update league_private.members set admin=true where id=$1',[state.user.id]);
-  assert.equal((await request(crew,'auth/register',{name:'Other',password:pass,invite})).status,403);
+  assert.equal((await request(crew,'auth/register',{name:'Other',password:pass,confirm_password:pass,invite})).status,403);
   const nextInvite=(await ok(organizer,'invites',{})).code;
-  assert.equal((await request(crew,'auth/register',{name:'ＣＡＰＴＡＩＮ',password:pass,invite:nextInvite})).status,409);
-  await ok(crew,'auth/register',{name:'Crew',password:pass,invite:nextInvite});
+  assert.equal((await request(crew,'auth/register',{name:'ＣＡＰＴＡＩＮ',password:pass,confirm_password:pass,invite:nextInvite})).status,409);
+  await ok(crew,'auth/register',{name:'Crew',password:pass,confirm_password:pass,invite:nextInvite});
   assert.equal((await request(crew,'invites',{admin:true})).status,403);
   const same=client();await ok(same,'auth/login',{name:'cAPTAIN',password:pass});
   const oldToken=organizer.token;

@@ -11,7 +11,7 @@ class Flow(unittest.TestCase):
   with db() as c: c.execute('INSERT INTO users(name,password,admin) VALUES(?,?,1)',('host',generate_password_hash('a-long-password')))
   self.assertEqual(post(a,'auth/login',{'name':'host','password':'a-long-password'}).status_code,200)
   code=post(a,'invites',{}).json['code']
-  self.assertEqual(post(b,'auth/register',{'name':'maker','password':'another-long-password','invite':code}).status_code,200)
+  self.assertEqual(post(b,'auth/register',{'name':'maker','password':'another-long-password','confirm_password':'another-long-password','invite':code}).status_code,200)
   self.assertEqual(post(b,'invites',{}).status_code,403)
   self.assertEqual(a.post('/api/rounds',json={}).status_code,403)
   self.assertEqual(post(a,'rounds',{'title':'Round one','deadline':'2026-12-01'}).status_code,200)

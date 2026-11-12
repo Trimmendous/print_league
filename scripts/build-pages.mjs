@@ -17,7 +17,7 @@ export async function buildPages(output = new URL('../dist/', import.meta.url), 
     else await copyFile(source,dest);
   }
   await writeFile(new URL('static/config.js',output),`window.LEAGUE_CONFIG = ${JSON.stringify({apiBase,basePath})};\n`);
-  const csp=`default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' ${api.origin}; img-src 'self' blob: https://makerworld.bblmw.com https://media.printables.com https://media.prusaprinters.org; base-uri 'self'; form-action 'self'; object-src 'none'`;
+  const csp=`default-src 'self'; script-src 'self' https://accounts.google.com/gsi/client; style-src 'self' https://accounts.google.com/gsi/style; frame-src https://accounts.google.com/gsi/; connect-src 'self' ${api.origin} https://accounts.google.com/gsi/; img-src 'self' blob: https://makerworld.bblmw.com https://media.printables.com https://media.prusaprinters.org; base-uri 'self'; form-action 'self'; object-src 'none'`;
   for (const file of ['index.html','404.html']) {
     let html=rewrite(await readFile(new URL('../static/'+file,import.meta.url),'utf8'));
     html=html.replace('<head>','<head><meta http-equiv="Content-Security-Policy" content="'+csp+'">');

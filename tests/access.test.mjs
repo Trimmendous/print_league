@@ -1,0 +1,81 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import * as jose from 'jose';
+import {testDatabase} from './helpers/database.mjs';
+import {createHandler} from '../supabase/functions/league-api/handler.mjs';
+import {googleVerifier} from '../supabase/functions/_shared/google.mjs';
+import {digest,token,hashPassword} from '../supabase/functions/_shared/passwords.mjs';
+import {APIError} from '../supabase/functions/_shared/validation.mjs';
+const base='https://fixture.supabase.co/functions/v1/league-api/';
+async function fixture(){
+ const {db,rpc}=await testDatabase();
+ const named=name=>async(operation,payload={},session_hash='')=>{
+  try{return (await db.query(`select public.${name}($1,$2::jsonb,$3) as result`,[operation,JSON.stringify(payload),session_hash])).rows[0].result;}
+  catch(e){const m=/^(\d{3})\|(.+)$/.exec(e.message);if(m)throw new APIError(+m[1],m[2]);throw e;}
+ };
+ const googleRPC=named('league_google');
+ const adminRPC=async(operation,payload={},session_hash='')=>{
+  try{return (await db.query('select public.league_admin($1,$2,$3::jsonb) as result',[session_hash,operation,JSON.stringify(payload)])).rows[0].result;}
+  catch(e){const m=/^(\d{3})\|(.+)$/.exec(e.message);if(m)throw new APIError(+m[1],m[2]);throw e;}
+ };
+ const invitation=async()=>{const code=token();await db.query("insert into league_private.invites(token_hash,expires_at) values($1,now()+interval '1 day')",[await digest(code)]);return code;};
+ return {db,rpc,googleRPC,adminRPC,invitation};
+}
+function client(handle){return {token:null,async request(path,body){const r=await handle(new Request(base+path,{method:body===undefined?'GET':'POST',headers:{Origin:'https://trimmendous.github.io',...(body===undefined?{}:{'Content-Type':'application/json'}),...(this.token?{Authorization:'Bearer '+this.token}:{})},body:body===undefined?undefined:JSON.stringify(body)}));const data=await r.json();if(data.session_token)this.token=data.session_token;return {status:r.status,...data};}};}
+test('six-character signup requires confirmation; admin page and promotion are server-authorized',async()=>{
+ const f=await fixture(),handle=createHandler(f),admin=client(handle),member=client(handle),guest=client(handle);
+ try {
+  const invite=await f.invitation();
+  for(const p of [{password:'12345',confirm_password:'12345'},{password:'123456'},{password:'123456',confirm_password:'abcdef'}])assert.equal((await admin.request('auth/register',{name:'admin',invite,...p})).status,400);
+  assert.equal((await admin.request('auth/register',{name:'admin',invite,password:'123456',confirm_password:'123456'})).status,200);
+  const uid=(await admin.request('state')).user.id;await f.db.query('update league_private.members set admin=true where id=$1',[uid]);
+  assert.equal((await member.request('auth/register',{name:'member',invite:await f.invitation(),password:'abcdef',confirm_password:'abcdef'})).status,200);
+  const mid=(await member.request('state')).user.id;
+  assert.equal((await guest.request('admin')).status,403);assert.equal((await member.request('admin')).status,403);
+  assert.equal((await member.request('admin/promote',{member_id:mid,admin:true})).status,403);
+  let summary=await admin.request('admin');assert.equal(summary.member_count,2);assert.equal(summary.admin_count,1);
+  assert.equal((await admin.request('admin/promote',{member_id:mid})).status,200);
+  summary=await admin.request('admin');assert.equal(summary.admin_count,2);
+  assert.equal((await member.request('invites',{})).status,200);
+  assert.equal((await f.db.query('select count(*)::integer as count from league_private.admin_promotions')).rows[0].count,1);
+  assert.equal((await admin.request('profile/credentials',{name:'admin',current_password:'123456',password:'abcdef',confirm_password:'abcdef'})).status,200);
+  await f.db.exec('set role anon');await assert.rejects(f.db.query("select public.league_admin('','summary')"),/permission denied/);await f.db.exec('reset role');
+ }finally{await f.db.close();}
+});
+test('Google JWT validation rejects wrong app, issuer, expiry, signature and malformed nonce',async()=>{
+ const {privateKey,publicKey}=await jose.generateKeyPair('RS256'), clientID='test.apps.googleusercontent.com';
+ const verifier=googleVerifier(clientID,jose,publicKey);
+ const sign=(changes={})=>new jose.SignJWT({nonce:token(),sub:'google-subject',iss:'https://accounts.google.com',aud:clientID,iat:Math.floor(Date.now()/1000),exp:Math.floor(Date.now()/1000)+600,...changes}).setProtectedHeader({alg:'RS256'}).sign(privateKey);
+ assert.equal((await verifier.verify(await sign())).subject,'google-subject');
+ for(const changes of [{aud:'other.apps.googleusercontent.com'},{iss:'https://evil.example'},{exp:1},{nonce:'wrong'},{sub:''}])await assert.rejects(verifier.verify(await sign(changes)),/could not be verified/);
+ const signed=await sign();await assert.rejects(verifier.verify(signed.slice(0,-8)+'AAAAAAAA'),/could not be verified/);
+});
+test('Google signup remains invite-only; nonce/replay checks, explicit linking and last-method protection',async()=>{
+ const f=await fixture();const {privateKey,publicKey}=await jose.generateKeyPair('RS256'),clientID='test.apps.googleusercontent.com';
+ const google=googleVerifier(clientID,jose,publicKey),handle=createHandler({...f,google}),g=client(handle),other=client(handle);
+ const sign=(nonce,sub='subject-one')=>new jose.SignJWT({nonce,sub,email:'private@example.test',name:'Private Google Name'}).setProtectedHeader({alg:'RS256'}).setIssuer('https://accounts.google.com').setAudience(clientID).setIssuedAt().setExpirationTime('5m').sign(privateKey);
+ const complete=async(c,ch,sub)=>c.request('auth/google',{challenge:ch.challenge,credential:await sign(ch.nonce,sub)});
+ try{
+  assert.equal((await g.request('auth/google/challenge',{mode:'register',display_name:'Maker',invite:'bad'})).status,403);
+  let ch=await g.request('auth/google/challenge',{mode:'login'});assert.equal(ch.status,200);
+  assert.equal((await complete(g,ch)).status,403);
+  ch=await g.request('auth/google/challenge',{mode:'register',display_name:'Public maker',invite:await f.invitation()});assert.equal(ch.status,200);
+  assert.equal((await g.request('auth/google',{challenge:ch.challenge,credential:await sign(token())})).status,403);
+  assert.equal((await complete(g,ch)).status,200);
+  let state=await g.request('state');const uid=state.user.id;
+  assert.equal(state.user.display_name,'Public maker');assert.equal(state.user.name,'');assert.equal(state.user.has_password,false);
+  assert(!JSON.stringify(state).includes('private@example'));assert(!JSON.stringify(state).includes('Private Google Name'));
+  assert.equal((await complete(g,ch)).status,403);
+  assert.equal((await g.request('profile/google/unlink',{})).status,400);
+  assert.equal((await g.request('profile/credentials',{name:'boat',password:'123456',confirm_password:'123456'})).status,200);
+  assert.equal((await g.request('state')).user.id,uid);
+  // Password signup cannot hijack an existing Google identity by matching email or flags.
+  await other.request('auth/register',{name:'other',password:'abcdef',confirm_password:'abcdef',invite:await f.invitation()});
+  ch=await other.request('auth/google/challenge',{mode:'link'});assert.equal(ch.status,200);assert.equal((await complete(other,ch)).status,409);
+  ch=await other.request('auth/google/challenge',{mode:'link'});assert.equal((await complete(other,ch,'subject-two')).status,200);
+  const oid=(await other.request('state')).user.id;await other.request('auth/logout',{});other.token=null;
+  ch=await other.request('auth/google/challenge',{mode:'login'});assert.equal((await complete(other,ch,'subject-two')).status,200);assert.equal((await other.request('state')).user.id,oid);
+  assert.equal((await g.request('profile/google/unlink',{})).status,200);
+  await f.db.exec('set role authenticated');await assert.rejects(f.db.query("select public.league_google('complete','{}','')"),/permission denied/);await f.db.exec('reset role');
+ }finally{await f.db.close();}
+});

@@ -12,7 +12,7 @@ async function jsonBody(request) {
  let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{throw new APIError(400,'Invalid JSON request.');}
  if(!body||typeof body!=='object'||Array.isArray(body))throw new APIError(400,'Invalid JSON request.');return body;
 }
-export function createHandler({rpc=null,photos=null,releases=fallbackReleases}={}) {
+export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null,google=null,releases=fallbackReleases}={}) {
  return async function handle(request) {
   const origin=request.headers.get('Origin');
   const headers={'Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin','X-Content-Type-Options':'nosniff'};
@@ -42,9 +42,13 @@ export function createHandler({rpc=null,photos=null,releases=fallbackReleases}={
     const photo=/^users\/(\d+)\/avatar$/.exec(path);
     if(photo&&photos){if(!sessionHash)throw new APIError(401,'Please sign in again.');const bytes=await photos.get(Number(photo[1]),sessionHash);return new Response(bytes,{headers:{...headers,'Content-Type':'image/jpeg'}});}
     if(path==='state') {
-     if(!sessionHash)return reply({user:null,csrf:'bearer',server_now:Date.now()/1000,releases,capabilities:{recovery:true,avatars:!!photos}});
-     return reply({...await call('state'),releases,capabilities:{recovery:true,avatars:!!photos}});
+     const capabilities={recovery:true,avatars:!!photos,admin_management:!!adminRPC,google_client_id:google?.clientID||null};
+     if(!sessionHash)return reply({user:null,csrf:'bearer',server_now:Date.now()/1000,releases,capabilities});
+     const state=await call('state');
+     if(googleRPC)state.user.google_linked=(await googleRPC('status',{},sessionHash)).linked;
+     return reply({...state,releases,capabilities});
     }
+    if(path==='admin'){if(!sessionHash||!adminRPC)throw new APIError(403,'Administrator access required.');return reply(await adminRPC('summary',{},sessionHash));}
     if(path==='username-availability') {
      const name=field({name:url.searchParams.get('name')},'name',40);
      return reply(await call('availability',{normalized:normalize(name)}));
@@ -54,14 +58,30 @@ export function createHandler({rpc=null,photos=null,releases=fallbackReleases}={
    if(/^entries\/\d+\/file$/.test(path))throw new APIError(403,'Project file uploads are disabled. Share a model link instead.');
    if(path==='profile/avatar'){if(!sessionHash)throw new APIError(401,'Please sign in again.');if(!photos)throw new APIError(503,'Photo uploads are unavailable.');await limit('photo:'+sessionHash);return reply(await photos.upload(request,sessionHash));}
    const body=await jsonBody(request);
+   if(path==='auth/google/challenge'||path==='auth/google') {
+    if(!google||!googleRPC)throw new APIError(503,'Google sign-in is not configured yet.');
+    await limit('google:'+String(body.challenge||sessionHash||body.invite||'login'));
+    if(path.endsWith('challenge')) {
+     const challenge=token(),nonce=token(),mode=field(body,'mode',20);
+     const payload={mode,challenge_hash:await digest(challenge),nonce_hash:await digest(nonce)};
+     if(mode==='register'){payload.invite_hash=await digest(field(body,'invite',160));payload.display_name=field(body,'display_name',80);}
+     await googleRPC('challenge',payload,sessionHash);
+     return reply({challenge,nonce,client_id:google.clientID});
+    }
+    const challenge=field(body,'challenge',64), identity=await google.verify(field(body,'credential',12000));
+    const sessionToken=token();
+    await googleRPC('complete',{challenge_hash:await digest(challenge),nonce_hash:await digest(identity.nonce),subject:identity.subject,token_hash:await digest(sessionToken)},sessionHash);
+    return reply({ok:true,session_token:sessionToken});
+   }
    if(path==='auth/login'||path==='auth/register'||path==='auth/recover') {
-    const name=field(body,'name',40), normalized=normalize(name), secret=password(body,'password',path.endsWith('login')?1:12);
+    const name=field(body,'name',40), normalized=normalize(name), secret=password(body,'password',path.endsWith('login')?1:6);
     await limit('login:'+normalized);
     const sessionToken=token(), tokenHash=await digest(sessionToken);
     if(path==='auth/recover') {
      if(secret!==body.confirm_password)throw new APIError(400,'Passwords do not match.');
      await rpc('recover',{normalized,recovery_hash:await digest(field(body,'recovery_code',160)),hash:await hashPassword(secret),token_hash:tokenHash});
     } else if(path==='auth/register') {
+     if(secret!==body.confirm_password)throw new APIError(400,'Passwords do not match.');
      const invite=field(body,'invite',160);
      await rpc('register',{name,normalized,hash:await hashPassword(secret),invite_hash:await digest(invite),token_hash:tokenHash});
     } else {
@@ -72,6 +92,8 @@ export function createHandler({rpc=null,photos=null,releases=fallbackReleases}={
     return reply({ok:true,session_token:sessionToken});
    }
    if(!sessionHash)throw new APIError(401,'Please sign in again.');
+   if(path==='admin/promote'){if(!adminRPC)throw new APIError(403,'Administrator access required.');return reply(await adminRPC('promote',{member_id:body.member_id},sessionHash));}
+   if(path==='profile/google/unlink'){if(!googleRPC)throw new APIError(503,'Google linking is unavailable.');return reply(await googleRPC('unlink',{},sessionHash));}
    if(path==='auth/logout')return reply(await call('logout'));
    if(path==='profile/recovery-codes') {
     await limit('credentials:'+sessionHash);
@@ -86,7 +108,13 @@ export function createHandler({rpc=null,photos=null,releases=fallbackReleases}={
     const secret=password(body),name=field(body,'name',40);
     if(secret!==body.confirm_password)throw new APIError(400,'Passwords do not match.');
     const current=await call('own-credentials');
-    if(!await verifyPassword(password(body,'current_password',1),current?.hash))throw new APIError(403,'Your current password is incorrect.');
+    if(!current?.hash){
+     if(!googleRPC)throw new APIError(403,'Sign in with Google again.');
+     const sessionToken=token();
+     await googleRPC('add-password',{name,normalized:normalize(name),hash:await hashPassword(secret),token_hash:await digest(sessionToken)},sessionHash);
+     return reply({ok:true,session_token:sessionToken});
+    }
+    if(!await verifyPassword(password(body,'current_password',1),current.hash))throw new APIError(403,'Your current password is incorrect.');
     const sessionToken=token();
     await call('change-credentials',{name,normalized:normalize(name),verified_hash:current.hash,hash:await hashPassword(secret),token_hash:await digest(sessionToken)});
     return reply({ok:true,session_token:sessionToken});
