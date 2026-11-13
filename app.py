@@ -186,8 +186,12 @@ def state():
     result={'csrf':session['csrf'], 'user':dict(u) if u else None, 'server_now':time.time(), 'releases':RELEASES}
     if u:
         with db() as c:
-            for table in ['rounds','topics','votes','participants','entries','winners','print_links','feature_ideas']:
+            for table in ['rounds','topics','participants','entries','winners','print_links','feature_ideas']:
                 result[table]=[dict(r) for r in c.execute('SELECT * FROM '+table)]
+            result['votes']=[dict(v) for v in c.execute('SELECT * FROM votes WHERE user_id=?', (u['id'],))]
+            for r in result['rounds']:
+                r['voter_count']=c.execute('SELECT COUNT(DISTINCT user_id) FROM votes WHERE round_id=?', (r['id'],)).fetchone()[0]
+                r['tied_topic_ids']=[t['id'] for t in leaders(c, r['id'])] if r['phase']=='tie' and (u['admin'] or r['creator_id']==u['id']) else []
             for entry in result['entries']: entry.pop('stored')
             result['users']=[dict(r) for r in c.execute('SELECT id,name,display_name,avatar FROM users')]
     return jsonify(result)

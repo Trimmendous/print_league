@@ -27,7 +27,7 @@ try{
  assert.equal(await round.getByRole('textbox',{name:'Suggest a topic'}).count(),0);
  await round.getByRole('button',{name:'Vote',exact:true}).first().click();await round.getByRole('button',{name:'Already voted for this topic'}).waitFor();
  await round.getByRole('button',{name:'Vote',exact:true}).click();await round.getByRole('button',{name:'Already voted for this topic'}).nth(1).waitFor();assert.equal(await round.getByRole('button',{name:'Already voted for this topic'}).count(),2);
- assert.equal((await api('state',undefined,admin)).votes.filter(v=>v.round_id===rid).length,2);
+ assert.equal((await api('state',undefined,admin)).rounds.find(r=>r.id===rid).voter_count,1);
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.locator('#settings summary').click();await page.getByRole('button',{name:'Sign out'}).click();await login('captain');
  await round.getByRole('button',{name:'Close poll now'}).click();await round.getByRole('button',{name:'Confirm winning topic'}).click();await round.getByText('The voyage to the finish',{exact:true}).waitFor();

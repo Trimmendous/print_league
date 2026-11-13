@@ -58,8 +58,15 @@ test('PostgreSQL + Edge API: accounts, permissions and full competition lifecycl
   assert.equal((await ok(crew,'state')).votes.length,1);
   await ok(crew,`rounds/${rid}/vote`,{topic_id:secondTopic});
   assert.equal((await ok(crew,'state')).votes.length,2);
+  let privateState=await ok(organizer,'state');
+  assert.deepEqual(privateState.votes,[]);
+  assert.equal(privateState.rounds[0].voter_count,1);
+  assert.deepEqual(privateState.rounds[0].tied_topic_ids,[]);
   assert.equal(typeof (await ok(crew,'state')).rounds[0].voting_started_at,'number');
   await ok(organizer,`rounds/${rid}/vote`,{topic_id:tid});
+  privateState=await ok(crew,'state');
+  assert.equal(privateState.rounds[0].voter_count,2);
+  assert(privateState.votes.every(v=>v.user_id===privateState.user.id));
   assert.equal((await request(crew,`rounds/${rid}/close-poll`,{admin:true})).status,403);
   await ok(organizer,`rounds/${rid}/close-poll`,{});
   state=await ok(organizer,'state');assert.equal(state.rounds[0].phase,'printing');assert.equal(state.rounds[0].topic,'Tiny boats');
