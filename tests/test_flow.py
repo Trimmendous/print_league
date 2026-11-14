@@ -16,7 +16,7 @@ class Flow(unittest.TestCase):
   self.assertEqual(a.post('/api/rounds',json={}).status_code,403)
   self.assertEqual(post(a,'rounds',{'title':'Round one','deadline':'2026-12-01'}).status_code,200)
   post(b,'rounds/1/topic',{'title':'Tiny cities'})
-  post(b,'rounds/1/vote',{'topic_id':1}); post(b,'rounds/1/vote',{'topic_id':1})
+  post(b,'rounds/1/vote',{'topic_id':1})
   self.assertEqual(len(b.get('/api/state').json['votes']),1)
   post(b,'rounds/1/participate',{'status':'in'})
   self.assertEqual(post(b,'rounds/1/advance',{'topic_id':1}).status_code,403)

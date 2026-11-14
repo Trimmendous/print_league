@@ -25,9 +25,17 @@ try{
  assert.equal(await round.getByRole('button',{name:'Delete competition',exact:true}).count(),0);
  await api(`rounds/${rid}/open-voting`,{},admin);await page.evaluate(()=>load());await round.getByText('2 · Topic voting',{exact:true}).waitFor();
  assert.equal(await round.getByRole('textbox',{name:'Suggest a topic'}).count(),0);
- await round.getByRole('button',{name:'Vote',exact:true}).first().click();await round.getByRole('button',{name:'Already voted for this topic'}).waitFor();
- await round.getByRole('button',{name:'Vote',exact:true}).click();await round.getByRole('button',{name:'Already voted for this topic'}).nth(1).waitFor();assert.equal(await round.getByRole('button',{name:'Already voted for this topic'}).count(),2);
+ await round.getByRole('button',{name:'Vote',exact:true}).first().click();await round.getByRole('button',{name:'Undo vote for this topic'}).waitFor();
+ await round.getByRole('button',{name:'Vote',exact:true}).click();await round.getByRole('button',{name:'Undo vote for this topic'}).nth(1).waitFor();assert.equal(await round.getByRole('button',{name:'Undo vote for this topic'}).count(),2);
  assert.equal((await api('state',undefined,admin)).rounds.find(r=>r.id===rid).voter_count,1);
+ await round.getByRole('button',{name:'Undo vote for this topic'}).first().click();
+ await round.getByRole('button',{name:'Vote',exact:true}).waitFor();
+ assert.equal((await api('state',undefined,admin)).rounds.find(r=>r.id===rid).voter_count,1);
+ await round.getByRole('button',{name:'Undo vote for this topic'}).click();
+ await round.getByRole('button',{name:'Vote',exact:true}).nth(1).waitFor();
+ assert.equal((await api('state',undefined,admin)).rounds.find(r=>r.id===rid).voter_count,0);
+ for(let i=0;i<2;i++){await round.getByRole('button',{name:'Vote',exact:true}).first().click();await round.getByRole('button',{name:'Undo vote for this topic'}).nth(i).waitFor();}
+
  assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true);
  await page.locator('#settings summary').click();await page.getByRole('button',{name:'Sign out'}).click();await login('captain');
  await round.getByRole('button',{name:'Close poll now'}).click();await round.getByRole('button',{name:'Confirm winning topic'}).click();await round.getByText('The voyage to the finish',{exact:true}).waitFor();

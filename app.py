@@ -355,7 +355,8 @@ def round_action(rid,action):
         elif action=='vote' and phase=='topics':
             tid=payload.get('topic_id')
             if not c.execute('SELECT 1 FROM topics WHERE id=? AND round_id=?',(tid,rid)).fetchone(): abort(400)
-            c.execute('INSERT OR IGNORE INTO votes VALUES(?,?,?)',(rid,u['id'],tid))
+            removed=c.execute('DELETE FROM votes WHERE round_id=? AND user_id=? AND topic_id=?',(rid,u['id'],tid)).rowcount
+            if not removed: c.execute('INSERT INTO votes VALUES(?,?,?)',(rid,u['id'],tid))
         elif action=='open-voting' and manager and phase=='submissions':
             if not c.execute('SELECT 1 FROM topics WHERE round_id=?',(rid,)).fetchone(): abort(400,'Add at least one topic before opening voting.')
             if r['votes_close_at'] and r['votes_close_at']<=time.time(): abort(400,'The scheduled poll closing time has passed.')

@@ -195,10 +195,18 @@ class Rounds(unittest.TestCase):
         self.assertEqual(self.topic(self.maker,'First').status_code,200)
         self.assertEqual(self.topic(self.maker,'Second').status_code,200)
         self.assertEqual(self.post(self.host,f'rounds/{rid}/open-voting',{}).status_code,200)
-        for tid in [1,2,1]:
+        for tid in [1,2]:
             self.assertEqual(self.post(self.maker,f'rounds/{rid}/vote',{'topic_id':tid}).status_code,200)
         votes=self.maker.get('/api/state').json['votes']
         self.assertEqual(len(votes),2)
+        self.post(self.maker,f'rounds/{rid}/vote',{'topic_id':1})
+        self.assertEqual(len(self.maker.get('/api/state').json['votes']),1)
+        self.assertEqual(self.state(rid)['voter_count'],1)
+        self.post(self.maker,f'rounds/{rid}/vote',{'topic_id':2})
+        self.assertEqual(self.maker.get('/api/state').json['votes'],[])
+        self.assertEqual(self.state(rid)['voter_count'],0)
+        self.post(self.maker,f'rounds/{rid}/vote',{'topic_id':1})
+        self.assertEqual(self.state(rid)['voter_count'],1)
         self.assertEqual(self.topic(self.maker,'Too late').status_code,403)
         self.assertEqual(self.post(self.maker,f'rounds/{rid}/delete-competition',{}).status_code,403)
         self.assertEqual(self.post(self.host,f'rounds/{rid}/delete-competition',{}).status_code,200)
