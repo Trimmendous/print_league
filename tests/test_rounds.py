@@ -92,12 +92,13 @@ class Rounds(unittest.TestCase):
         self.post(self.maker,'rounds/1/vote',{'topic_id':1});self.post(self.other,'rounds/1/vote',{'topic_id':2})
         self.assertEqual(self.post(self.maker,'rounds/1/close-poll',{}).status_code,403)
         self.assertEqual(self.post(self.host,'rounds/1/close-poll',{}).status_code,200)
-        self.assertEqual(self.state()['phase'],'tie')
-        self.assertEqual(self.post(self.maker,'rounds/1/vote',{'topic_id':1}).status_code,403)
-        self.assertEqual(self.post(self.host,'rounds/1/resolve-tie',{'topic_id':3}).status_code,400)
+        self.assertEqual(self.state()['phase'],'topics')
+        self.assertEqual(self.state()['runoff_topic_ids'],[1,2])
+        self.assertEqual(self.post(self.maker,'rounds/1/vote',{'topic_id':3}).status_code,400)
+        self.assertEqual(self.post(self.maker,'rounds/1/vote',{'topic_id':2}).status_code,200)
         # Creator retains management access even if they are no longer an admin.
         with db() as c: c.execute('UPDATE users SET admin=0 WHERE id=1')
-        self.assertEqual(self.post(self.host,'rounds/1/resolve-tie',{'topic_id':2}).status_code,200)
+        self.assertEqual(self.post(self.host,'rounds/1/close-poll',{}).status_code,200)
         self.assertEqual(self.state()['topic'],'Bridges')
 
     def test_dates_and_empty_polls(self):

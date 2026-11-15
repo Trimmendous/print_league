@@ -132,10 +132,12 @@ test('deadline catch-up, ties, rate limits, reserved admin invitation and one-us
   let state=await rpc('state',{},tHash);const rid=state.rounds[0].id;
   for(const title of ['A','B'])await rpc('round-action',{round_id:rid,action:'topic',title,normalized:title.toLowerCase()},tHash);
   await rpc('round-action',{round_id:rid,action:'close-poll'},tHash);
-  assert.equal((await rpc('state',{},tHash)).rounds[0].phase,'tie');
-  await assert.rejects(rpc('round-action',{round_id:rid,action:'resolve-tie',topic_id:999},tHash),/tied/);
-  await db.query("update league_private.rounds set deadline=now()-interval '1 second' where id=$1",[rid]);
-  await rpc('round-action',{round_id:rid,action:'resolve-tie',topic_id:state.topics[0]?.id||1},tHash);
+  let runoff=(await rpc('state',{},tHash)).rounds[0];
+  assert.equal(runoff.phase,'topics');assert.equal(runoff.runoff_number,1);
+  assert.equal(runoff.runoff_topic_ids.length,2);
+  await rpc('round-action',{round_id:rid,action:'vote',topic_id:runoff.runoff_topic_ids[0]},tHash);
+  await rpc('round-action',{round_id:rid,action:'close-poll'},tHash);
+  await db.query("update league_private.rounds set votes_close_at=null,deadline=now()-interval '1 second' where id=$1",[rid]);
   assert.equal((await rpc('state',{},tHash)).rounds[0].phase,'judging');
   await assert.rejects(rpc('round-action',{round_id:rid,action:'participate',status:'in'},tHash),/not available/);
   await rpc('rounds',{title:'Empty',deadline},tHash);

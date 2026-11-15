@@ -67,7 +67,7 @@ with db() as c:
     for table, additions in {
         'rounds': [('creator_id','INTEGER REFERENCES users'), ('has_prevote','INTEGER NOT NULL DEFAULT 0'),
                    ('voting_started_at','REAL'), ('vote_opens_at','REAL'), ('votes_close_at','REAL'), ('printing_started_at','REAL'),
-                   ('created_at','REAL NOT NULL DEFAULT 0')],
+                   ('runoff_number','INTEGER NOT NULL DEFAULT 0'), ('runoff_topic_ids',"TEXT NOT NULL DEFAULT '[]'"), ('original_vote_seconds','REAL'), ('created_at','REAL NOT NULL DEFAULT 0')],
         'topics': [('user_id','INTEGER REFERENCES users')],
         'print_links': [('preview_image', "TEXT NOT NULL DEFAULT ''")],
     }.items():
@@ -82,6 +82,7 @@ with db() as c:
         c.execute('INSERT INTO votes SELECT round_id,user_id,topic_id FROM votes_single_choice')
         c.execute('DROP TABLE votes_single_choice')
     c.execute("UPDATE rounds SET voting_started_at=CASE WHEN vote_opens_at<=? THEN vote_opens_at ELSE created_at END WHERE phase='topics' AND voting_started_at IS NULL", (time.time(),))
+    c.execute('CREATE TABLE IF NOT EXISTS poll_ballots(round_id INTEGER, ballot_number INTEGER, votes TEXT, PRIMARY KEY(round_id,ballot_number))')
     # Preserve votes when consolidating legacy duplicate topic spellings.
     seen = {}
     for t in c.execute('SELECT id,round_id,title FROM topics ORDER BY id').fetchall():
@@ -106,6 +107,8 @@ def timestamp(value, label='date'):
 
 def leaders(c, rid):
     rows = c.execute('SELECT t.id,t.title,COUNT(v.user_id) AS votes FROM topics t LEFT JOIN votes v ON v.topic_id=t.id AND v.round_id=t.round_id WHERE t.round_id=? GROUP BY t.id ORDER BY votes DESC,t.id', (rid,)).fetchall()
+    r=c.execute('SELECT runoff_number,runoff_topic_ids FROM rounds WHERE id=?',(rid,)).fetchone()
+    if r['runoff_number']: rows=[t for t in rows if t['id'] in json.loads(r['runoff_topic_ids'])]
     return [t for t in rows if t['votes'] == rows[0]['votes']] if rows else []
 
 
@@ -113,11 +116,21 @@ def close_poll(c, r, now):
     top = leaders(c, r['id'])
     if len(top) == 1:
         c.execute("UPDATE rounds SET phase='printing',topic=?,printing_started_at=? WHERE id=?", (top[0]['title'], now, r['id']))
+    elif top:
+        seconds=r['original_vote_seconds'] or max(now-(r['voting_started_at'] or r['vote_opens_at'] or r['created_at']),1)
+        starts=max(now,time.time()); ends=starts+seconds/2
+        votes=[dict(v) for v in c.execute('SELECT * FROM votes WHERE round_id=?',(r['id'],))]
+        c.execute('INSERT INTO poll_ballots VALUES(?,?,?)',(r['id'],r['runoff_number'],json.dumps(votes)))
+        c.execute('DELETE FROM votes WHERE round_id=?',(r['id'],))
+        deadline=datetime.fromtimestamp(max(timestamp(r['deadline']),ends),timezone.utc).isoformat()
+        c.execute("UPDATE rounds SET phase='topics',runoff_number=runoff_number+1,runoff_topic_ids=?,original_vote_seconds=?,voting_started_at=?,votes_close_at=?,deadline=? WHERE id=?",(json.dumps([t['id'] for t in top]),seconds,starts,ends,deadline,r['id']))
     else:
-        c.execute("UPDATE rounds SET phase=? WHERE id=?", ('tie' if top else 'no_topics', r['id']))
+        c.execute("UPDATE rounds SET phase='no_topics' WHERE id=?",(r['id'],))
 
 
 def sync_rounds(c, now):
+    for r in c.execute("SELECT * FROM rounds WHERE phase='tie'").fetchall():
+        close_poll(c,r,min(r['votes_close_at'] or now,timestamp(r['deadline'])))
     for r in c.execute("SELECT * FROM rounds WHERE phase='submissions' AND vote_opens_at IS NOT NULL AND vote_opens_at<=?", (now,)).fetchall():
         c.execute("UPDATE rounds SET phase='topics',voting_started_at=? WHERE id=?", (r['vote_opens_at'],r['id']))
     for r in c.execute("SELECT * FROM rounds WHERE phase IN ('submissions','topics') AND votes_close_at IS NOT NULL AND votes_close_at<=?", (now,)).fetchall():
@@ -190,6 +203,7 @@ def state():
                 result[table]=[dict(r) for r in c.execute('SELECT * FROM '+table)]
             result['votes']=[dict(v) for v in c.execute('SELECT * FROM votes WHERE user_id=?', (u['id'],))]
             for r in result['rounds']:
+                r['runoff_topic_ids']=json.loads(r['runoff_topic_ids'])
                 r['voter_count']=c.execute('SELECT COUNT(DISTINCT user_id) FROM votes WHERE round_id=?', (r['id'],)).fetchone()[0]
                 r['tied_topic_ids']=[t['id'] for t in leaders(c, r['id'])] if r['phase']=='tie' and (u['admin'] or r['creator_id']==u['id']) else []
             for entry in result['entries']: entry.pop('stored')
@@ -336,10 +350,10 @@ def round_action(rid,action):
         if not r: abort(404)
         phase=r['phase']; payload=request.get_json(silent=True) or {}
         manager = bool(u['admin'] or r['creator_id']==u['id'])
-        collecting = phase=='submissions' or (phase=='topics' and not r['has_prevote'])
+        collecting = phase=='submissions' or (phase=='topics' and not r['has_prevote'] and not r['runoff_number'])
         if action=='delete-competition' and u['admin']:
             # Legacy SQLite tables do not have cascading foreign keys.
-            for table in ['print_links','winners','entries','participants','votes','topics']:
+            for table in ['print_links','winners','entries','participants','votes','topics','poll_ballots']:
                 c.execute('DELETE FROM '+table+' WHERE round_id=?',(rid,))
             c.execute('DELETE FROM rounds WHERE id=?',(rid,))
         elif action=='topic' and collecting:
@@ -355,6 +369,7 @@ def round_action(rid,action):
         elif action=='vote' and phase=='topics':
             tid=payload.get('topic_id')
             if not c.execute('SELECT 1 FROM topics WHERE id=? AND round_id=?',(tid,rid)).fetchone(): abort(400)
+            if r['runoff_number'] and tid not in json.loads(r['runoff_topic_ids']): abort(400,'Choose a tied topic from this tiebreaker.')
             removed=c.execute('DELETE FROM votes WHERE round_id=? AND user_id=? AND topic_id=?',(rid,u['id'],tid)).rowcount
             if not removed: c.execute('INSERT INTO votes VALUES(?,?,?)',(rid,u['id'],tid))
         elif action=='open-voting' and manager and phase=='submissions':

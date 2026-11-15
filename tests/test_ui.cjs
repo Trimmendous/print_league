@@ -150,3 +150,10 @@ test('each poll phase uses its own Benchy clock and members can vote for multipl
  assert.match(html,/data-start="2100000" data-end="3000000"/);assert.match(html,/Vote for as many topics/);assert.match(html,/<button aria-pressed="true" aria-label="Undo vote/);assert.match(html,/<button aria-pressed="false">Vote/);assert.doesNotMatch(html,/data-path="rounds\/3\/topic"/);
  run('s.user.admin=true');assert.match(run("round({id:3,title:'Done',phase:'completed',deadline:'2027-01-01T12:00:00Z'})"),/delete-competition/);
 });
+test('tiebreaker shows only eligible topics and removes the privacy caption',()=>{
+ const {run}=ui();
+ run('s.topics=[{id:1,round_id:3,user_id:1,title:"Finalist"},{id:2,round_id:3,user_id:1,title:"Eliminated"}];s.votes=[]');
+ const html=run("round({id:3,title:'Poll',phase:'topics',runoff_number:1,runoff_topic_ids:[1],voting_started_at:2000,votes_close_at:3000,deadline:'2027-01-01T12:00:00Z'})");
+ assert.match(html,/Tiebreaker 1/);assert.match(html,/Finalist/);assert.match(html,/half the original voting time/);
+ assert.doesNotMatch(html,/Eliminated|Vote totals are private|data-path="rounds\/3\/topic"/);
+});
