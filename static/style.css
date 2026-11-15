@@ -183,3 +183,15 @@ body>.site-footer{position:fixed;inset:auto 0 0;z-index:4;display:flex;justify-c
 /* Keep the header brand mark solid orange in every appearance mode. */
 .site-header .benchy-mark{--benchy-cabin:var(--orange);--benchy-hull:var(--orange)}
 .header-right{gap:14px}.header-username{font-size:13px;font-weight:600;color:var(--muted);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:default}@media(max-width:580px){.header-right{gap:8px}.header-username{max-width:95px;font-size:12px}}
+
+/* Keep the original ballot visible while making the active runoff clear. */
+.ballot-progress{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0}
+.ballot-progress>span{flex:1 1 160px;padding:12px 14px;border:1px solid var(--line);border-radius:9px;font-size:13px;font-weight:700}
+.ballot-progress small{display:block;margin-top:4px;font-size:12px;font-weight:400}
+.ballot-complete{color:var(--muted)}
+.ballot-progress .ballot-current{border-color:var(--sea);box-shadow:inset 3px 0 var(--sea)}
+.ballot-heading{margin-bottom:6px}
+.topic-status{display:block;margin-top:5px;color:var(--sea);font-size:11px;font-weight:600}
+.topic-eliminated strong,.topic-eliminated .topic-status{color:var(--muted)}
+.topic-eliminated s{text-decoration-thickness:1px}
+.topic-eliminated{border-left:2px solid var(--line);padding-left:12px}
