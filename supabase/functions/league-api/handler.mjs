@@ -2,6 +2,30 @@ import {APIError,field,password,normalize,collapse,topicKey,date,printLink} from
 import {digest,token,hashPassword,verifyPassword} from '../_shared/passwords.mjs';
 const allowedOrigin='https://trimmendous.github.io';
 import fallbackReleases from '../_shared/releases.mjs';
+const shoppingStores=new Map([
+ ['us.store.bambulab.com','bambu'],['bambulab-us.myshopify.com','bambu'],
+ ['shop.polymaker.com','polymaker'],['store.sunlu.com','sunlu']
+]);
+function wholeNumber(value,limit,label) {
+ if(!['number','string'].includes(typeof value)||!/^\d+$/.test(String(value))||Number(value)<1||Number(value)>limit)
+  throw new APIError(400,`Use a whole number from 1 to ${limit} for ${label}.`);
+ return Number(value);
+}
+function filamentLink(body) {
+ const raw=field(body,'url',2048);
+ let url;
+ try {url=new URL(raw);} catch {throw new APIError(400,'Enter the full filament product link.');}
+ const vendor=shoppingStores.get(url.hostname);
+ if(!vendor||url.protocol!=='https:'||url.username||url.password||url.port||!/(?:^|\/)products\/[^/]+/.test(url.pathname)||/[\x00-\x20\x7f\\]/.test(raw))
+  throw new APIError(400,'Use an HTTPS product link from the filament store.');
+ return {vendor,url:url.href};
+}
+function matchesBotToken(bearer,secret) {
+ if(!/^[a-f0-9]{64}$/.test(secret||'')||!/^Bearer [a-f0-9]{64}$/.test(bearer||''))return false;
+ let mismatch=0;
+ for(let i=0;i<64;i++)mismatch|=bearer.charCodeAt(i+7)^secret.charCodeAt(i);
+ return mismatch===0;
+}
 async function jsonBody(request) {
  if(!request.headers.get('Content-Type')?.startsWith('application/json'))throw new APIError(400,'Send a JSON request.');
  // Enforce the limit while streaming, even when Content-Length is absent or false.
@@ -12,7 +36,20 @@ async function jsonBody(request) {
  let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{throw new APIError(400,'Invalid JSON request.');}
  if(!body||typeof body!=='object'||Array.isArray(body))throw new APIError(400,'Invalid JSON request.');return body;
 }
-export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null,google=null,releases=fallbackReleases}={}) {
+/** @typedef {(operation: string, payload?: object, sessionHash?: string) => Promise<any>} LeagueRPC */
+/**
+ * @param {object} [options]
+ * @param {LeagueRPC|null} [options.rpc]
+ * @param {LeagueRPC|null} [options.adminRPC]
+ * @param {LeagueRPC|null} [options.googleRPC]
+ * @param {LeagueRPC|null} [options.scheduleRPC]
+ * @param {LeagueRPC|null} [options.shoppingRPC]
+ * @param {{upload(request: Request, sessionHash: string): Promise<{ok: boolean}>, get(id: number, sessionHash: string): Promise<Uint8Array>}|null} [options.photos]
+ * @param {{clientID: string, verify(credential: string): Promise<{subject: string, nonce: string, gmailName: string|null}>}|null} [options.google]
+ * @param {string|null} [options.signalToken]
+ * @param {typeof fallbackReleases} [options.releases]
+ */
+export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null,google=null,scheduleRPC=null,shoppingRPC=null,signalToken=null,releases=fallbackReleases}={}) {
  return async function handle(request) {
   const origin=request.headers.get('Origin');
   const headers={'Content-Type':'application/json','Cache-Control':'no-store','Vary':'Origin','X-Content-Type-Options':'nosniff'};
@@ -33,6 +70,13 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
    if(!rpc)throw new APIError(503,'The league backend is being prepared. Please check back soon.');
    if(!['GET','POST'].includes(request.method))throw new APIError(405,'Method not allowed.');
    const bearer=request.headers.get('Authorization');
+   if(path==='signal/shopping') {
+    if(!shoppingRPC||!matchesBotToken(bearer,signalToken))throw new APIError(403,'Signal bot access required.');
+    if(request.method==='GET')return reply(await shoppingRPC('signal-events'));
+    const body=await jsonBody(request);
+    if(!/^\d{1,18}$/.test(String(body.id)))throw new APIError(400,'Invalid event.');
+    return reply(await shoppingRPC('signal-ack',{id:String(body.id)}));
+   }
    const rawToken=bearer?.match(/^Bearer ([a-f0-9]{64})$/)?.[1];
    if(bearer && !rawToken)throw new APIError(401,'Please sign in again.');
    const sessionHash=rawToken?await digest(rawToken):'';
@@ -46,6 +90,7 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
      if(!sessionHash)return reply({user:null,csrf:'bearer',server_now:Date.now()/1000,releases,capabilities});
      const state=await call('state');
      if(googleRPC)state.user.google_linked=(await googleRPC('status',{},sessionHash)).linked;
+     if(shoppingRPC)state.shopping=await shoppingRPC('state',{},sessionHash);
      return reply({...state,releases,capabilities});
     }
     if(path==='admin'){if(!sessionHash||!adminRPC)throw new APIError(403,'Administrator access required.');return reply(await adminRPC('summary',{},sessionHash));}
@@ -167,6 +212,16 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
    let match=/^rounds\/(\d+)\/([a-z-]+)$/.exec(path);
    if(match) {
     const action=match[2],data={round_id:match[1],action};
+    if(action==='schedule'&&scheduleRPC) {
+     const phase=field(body,'phase',20), ballot=String(body.ballot);
+     if(!/^\d{1,9}$/.test(ballot))throw new APIError(400,'Invalid ballot.');
+     return reply(await scheduleRPC('edit',{...data,phase,ballot,
+      deadline:phase==='judging'?null:date(body.deadline,'printing end'),
+      vote_opens_at:date(body.vote_opens_at,'topic collection end',true),
+      votes_close_at:date(body.votes_close_at,'topic voting end',true),
+      judging_ends_at:date(body.judging_ends_at,'judging end',true)
+     },sessionHash));
+    }
     if(['topic','entry'].includes(action))data.title=field(body,'title');
     if(action==='topic'){data.title=collapse(data.title);data.normalized=topicKey(data.title);}
     if(['vote','delete-topic','resolve-tie'].includes(action))data.topic_id=body.topic_id;
@@ -174,6 +229,21 @@ export function createHandler({rpc=null,photos=null,adminRPC=null,googleRPC=null
     if(action==='winner'){data.entry_id=body.entry_id;data.category=field(body,'category');}
     if(action==='links')Object.assign(data,printLink(body));
     return reply(await call('round-action',data));
+   }
+   if(path==='shopping'&&shoppingRPC) {
+    const vendor=field(body,'vendor',20);
+    if(!['bambu','polymaker','sunlu'].includes(vendor))throw new APIError(400,'Choose a filament store.');
+    return reply(await shoppingRPC('create',{vendor,title:field(body,'title',120),
+     target:wholeNumber(body.target,10000,'target rolls'),deadline:date(body.deadline,'shopping deadline',true)
+    },sessionHash));
+   }
+   match=/^shopping\/(\d+)\/(add|remove|deadline|close|cancel|read)$/.exec(path);
+   if(match&&shoppingRPC) {
+    const [,id,action]=match,data={id};
+    if(action==='add')Object.assign(data,filamentLink(body),{product:field(body,'product'),quantity:wholeNumber(body.quantity,1000,'rolls')});
+    if(action==='remove')data.item_id=wholeNumber(body.item_id,Number.MAX_SAFE_INTEGER,'item');
+    if(action==='deadline')data.deadline=date(body.deadline,'shopping deadline',true);
+    return reply(await shoppingRPC(action,data,sessionHash));
    }
    if(path==='features') {
     const title=field(body,'title',120), description=body.description||'';

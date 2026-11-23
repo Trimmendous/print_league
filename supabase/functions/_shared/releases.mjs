@@ -1,2 +1,29 @@
 // Shared release content from CHANGELOG.json.
-export default [{"version": "0.0.0", "title": "Initial Build", "voyage": "Maiden voyage", "summary": "Getting our sealegs.", "changes": ["Added topic suggestions, voting, competition deadlines, and category awards.", "Added crew profiles, trophy shelves, and a shared ideas board.", "Added print-link cards with optional MakerWorld or Printables images.", "Added account recovery codes and private profile photos.", "Added a Benchy-inspired 404 page and shared orange boat mark.", "Improved phone and tablet layouts, appearance themes, and accessible controls."]}];
+export default [
+  {
+    "version": "0.1.0",
+    "title": "Filament group buys",
+    "voyage": "Supply run",
+    "summary": "Coordinate bulk filament orders and adjust the competition schedule as plans change.",
+    "changes": [
+      "Admins can edit stage deadlines from the competition card.",
+      "Members can start shopping sprees, add filament picks, and see when the organizer closes or cancels a list.",
+      "An optional Signal bridge announces shopping sprees and links the group to Print League.",
+      "Help explains the tabs and includes feature requests. Find Credits in Settings and the changelog under the version number."
+    ]
+  },
+  {
+    "version": "0.0.0",
+    "title": "Initial Build",
+    "voyage": "Maiden voyage",
+    "summary": "Getting our sealegs.",
+    "changes": [
+      "Added topic suggestions, voting, competition deadlines, and category awards.",
+      "Added crew profiles, trophy shelves, and a shared ideas board.",
+      "Added print-link cards with optional MakerWorld or Printables images.",
+      "Added account recovery codes and private profile photos.",
+      "Added a Benchy-inspired 404 page and shared orange boat mark.",
+      "Improved phone and tablet layouts, appearance themes, and accessible controls."
+    ]
+  }
+];

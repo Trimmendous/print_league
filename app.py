@@ -1,6 +1,6 @@
 import base64
 import previews
-import os, sqlite3, secrets, functools, unicodedata, time, io, warnings, json
+import os, sqlite3, secrets, functools, unicodedata, time, io, warnings, json, re
 from pathlib import Path
 from contextlib import contextmanager
 from urllib.parse import urlsplit
@@ -49,6 +49,19 @@ with db() as c:
     CREATE TABLE IF NOT EXISTS winners(round_id INTEGER REFERENCES rounds, category TEXT, entry_id INTEGER REFERENCES entries, PRIMARY KEY(round_id,category));
     CREATE TABLE IF NOT EXISTS print_links(id INTEGER PRIMARY KEY, round_id INTEGER REFERENCES rounds, user_id INTEGER REFERENCES users, title TEXT, url TEXT, UNIQUE(round_id,user_id,url));
     CREATE TABLE IF NOT EXISTS feature_ideas(id INTEGER PRIMARY KEY, title TEXT, description TEXT DEFAULT '', stage TEXT DEFAULT 'ideas', user_id INTEGER REFERENCES users, created_at REAL);
+    CREATE TABLE IF NOT EXISTS shopping_sprees(
+        id INTEGER PRIMARY KEY, creator_id INTEGER NOT NULL REFERENCES users, title TEXT NOT NULL,
+        vendor TEXT NOT NULL, target INTEGER NOT NULL, deadline REAL, status TEXT NOT NULL DEFAULT 'open',
+        closed_at REAL
+    );
+    CREATE TABLE IF NOT EXISTS shopping_items(
+        id INTEGER PRIMARY KEY, spree_id INTEGER NOT NULL REFERENCES shopping_sprees,
+        user_id INTEGER NOT NULL REFERENCES users, product TEXT NOT NULL, url TEXT NOT NULL, quantity INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS shopping_reads(
+        spree_id INTEGER NOT NULL REFERENCES shopping_sprees, user_id INTEGER NOT NULL REFERENCES users,
+        PRIMARY KEY(spree_id,user_id)
+    );
     CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY, value TEXT);
 
     ''')
@@ -67,7 +80,8 @@ with db() as c:
     for table, additions in {
         'rounds': [('creator_id','INTEGER REFERENCES users'), ('has_prevote','INTEGER NOT NULL DEFAULT 0'),
                    ('voting_started_at','REAL'), ('vote_opens_at','REAL'), ('votes_close_at','REAL'), ('printing_started_at','REAL'),
-                   ('runoff_number','INTEGER NOT NULL DEFAULT 0'), ('runoff_topic_ids',"TEXT NOT NULL DEFAULT '[]'"), ('original_vote_seconds','REAL'), ('created_at','REAL NOT NULL DEFAULT 0')],
+                   ('runoff_number','INTEGER NOT NULL DEFAULT 0'), ('runoff_topic_ids',"TEXT NOT NULL DEFAULT '[]'"), ('original_vote_seconds','REAL'), ('created_at','REAL NOT NULL DEFAULT 0'),
+                   ('judging_ends_at','REAL')],
         'topics': [('user_id','INTEGER REFERENCES users')],
         'print_links': [('preview_image', "TEXT NOT NULL DEFAULT ''")],
     }.items():
@@ -114,13 +128,14 @@ def leaders(c, rid):
 
 def close_poll(c, r, now):
     top = leaders(c, r['id'])
+    if top:
+        votes=[dict(v) for v in c.execute('SELECT * FROM votes WHERE round_id=?',(r['id'],))]
+        c.execute('INSERT OR IGNORE INTO poll_ballots VALUES(?,?,?)',(r['id'],r['runoff_number'],json.dumps(votes)))
     if len(top) == 1:
         c.execute("UPDATE rounds SET phase='printing',topic=?,printing_started_at=? WHERE id=?", (top[0]['title'], now, r['id']))
     elif top:
         seconds=r['original_vote_seconds'] or max(now-(r['voting_started_at'] or r['vote_opens_at'] or r['created_at']),1)
         starts=max(now,time.time()); ends=starts+seconds/2
-        votes=[dict(v) for v in c.execute('SELECT * FROM votes WHERE round_id=?',(r['id'],))]
-        c.execute('INSERT INTO poll_ballots VALUES(?,?,?)',(r['id'],r['runoff_number'],json.dumps(votes)))
         c.execute('DELETE FROM votes WHERE round_id=?',(r['id'],))
         deadline=datetime.fromtimestamp(max(timestamp(r['deadline']),ends),timezone.utc).isoformat()
         c.execute("UPDATE rounds SET phase='topics',runoff_number=runoff_number+1,runoff_topic_ids=?,original_vote_seconds=?,voting_started_at=?,votes_close_at=?,deadline=? WHERE id=?",(json.dumps([t['id'] for t in top]),seconds,starts,ends,deadline,r['id']))
@@ -167,6 +182,7 @@ def scheduled_transitions():
         with db() as c:
             c.execute('BEGIN IMMEDIATE')
             sync_rounds(c, time.time())
+            c.execute("UPDATE shopping_sprees SET status='closed',closed_at=deadline WHERE status='open' AND deadline<=?", (time.time(),))
 
 @app.after_request
 def headers(r):
@@ -206,8 +222,28 @@ def state():
                 r['runoff_topic_ids']=json.loads(r['runoff_topic_ids'])
                 r['voter_count']=c.execute('SELECT COUNT(DISTINCT user_id) FROM votes WHERE round_id=?', (r['id'],)).fetchone()[0]
                 r['tied_topic_ids']=[t['id'] for t in leaders(c, r['id'])] if r['phase']=='tie' and (u['admin'] or r['creator_id']==u['id']) else []
+            result['poll_results']=[]
+            for r in result['rounds']:
+                candidates=[t['id'] for t in result['topics'] if t['round_id']==r['id']]
+                ballots=[dict(b) for b in c.execute('SELECT * FROM poll_ballots WHERE round_id=? ORDER BY ballot_number',(r['id'],))]
+                if r['phase'] in ('printing','judging','completed') and r['topic'] and not any(b['ballot_number']==r['runoff_number'] for b in ballots):
+                    ballots.append(dict(round_id=r['id'],ballot_number=r['runoff_number'],votes=json.dumps([dict(v) for v in c.execute('SELECT * FROM votes WHERE round_id=?',(r['id'],))])))
+                for b in ballots:
+                    b['votes']=json.loads(b['votes']); b['topic_ids']=candidates
+                    if b['ballot_number']<r['runoff_number'] or r['phase'] in ('printing','judging','completed','tie'): result['poll_results'].append(b)
+                    counts={tid:sum(v['topic_id']==tid for v in b['votes']) for tid in candidates}
+                    candidates=[tid for tid in candidates if counts[tid]==max(counts.values())]
             for entry in result['entries']: entry.pop('stored')
             result['users']=[dict(r) for r in c.execute('SELECT id,name,display_name,avatar FROM users')]
+            result['shopping']={
+                'sprees':[dict(r) for r in c.execute('SELECT * FROM shopping_sprees ORDER BY id DESC')],
+                'items':[dict(r) for r in c.execute('SELECT * FROM shopping_items ORDER BY id')],
+                'unread':[r['id'] for r in c.execute("""
+                    SELECT id FROM shopping_sprees s WHERE status<>'open'
+                    AND EXISTS(SELECT 1 FROM shopping_items i WHERE i.spree_id=s.id AND i.user_id=?)
+                    AND NOT EXISTS(SELECT 1 FROM shopping_reads a WHERE a.spree_id=s.id AND a.user_id=?)
+                    ORDER BY id DESC""",(u['id'],u['id']))],
+            }
     return jsonify(result)
 @app.post('/api/auth/<action>')
 def auth(action):
@@ -339,6 +375,34 @@ def create_round():
                   (field('title'), datetime.fromtimestamp(deadline,timezone.utc).isoformat(), 'submissions' if prevote else 'topics', user()['id'], int(prevote), opens, closes, now))
     return jsonify(ok=True)
 
+def edit_round_schedule(c, r, payload):
+    now = time.time()
+    if r['phase'] != payload.get('phase') or str(r['runoff_number']) != str(payload.get('ballot')):
+        abort(409, 'The stage changed. Refresh the page and try again.')
+    if r['phase'] == 'judging':
+        cutoff = timestamp(payload['judging_ends_at'], 'judging end') if payload.get('judging_ends_at') else None
+        if cutoff is not None and cutoff <= now: abort(400, 'Judging must end in the future.')
+        c.execute('UPDATE rounds SET judging_ends_at=? WHERE id=?', (cutoff,r['id']))
+        return
+    if r['phase'] == 'completed': abort(409, 'This competition is complete.')
+    cutoff = timestamp(payload.get('deadline'), 'printing end')
+    collection_end, voting_end = r['vote_opens_at'], r['votes_close_at']
+    if r['phase'] == 'submissions':
+        collection_end = timestamp(payload['vote_opens_at'], 'collection end') if payload.get('vote_opens_at') else None
+        if collection_end is not None and collection_end <= now: abort(400, 'Topic collection must end in the future.')
+    elif collection_end is not None and collection_end > now:
+        collection_end = r['voting_started_at']
+    if r['phase'] in ('submissions','topics'):
+        voting_end = timestamp(payload['votes_close_at'], 'voting end') if payload.get('votes_close_at') else None
+        if voting_end is not None and voting_end <= max(now, collection_end or now):
+            abort(400, 'Topic voting must end in the future and after scheduled collection.')
+    elif voting_end is not None and voting_end > cutoff:
+        voting_end = None
+    if cutoff <= now or (collection_end is not None and collection_end >= cutoff) or (voting_end is not None and voting_end > cutoff):
+        abort(400, 'Printing must end in the future, after collection and at or after voting.')
+    c.execute('UPDATE rounds SET deadline=?,vote_opens_at=?,votes_close_at=? WHERE id=?',
+              (datetime.fromtimestamp(cutoff,timezone.utc).isoformat(),collection_end,voting_end,r['id']))
+
 @app.post('/api/rounds/<int:rid>/<action>')
 @protected()
 def round_action(rid,action):
@@ -351,7 +415,10 @@ def round_action(rid,action):
         phase=r['phase']; payload=request.get_json(silent=True) or {}
         manager = bool(u['admin'] or r['creator_id']==u['id'])
         collecting = phase=='submissions' or (phase=='topics' and not r['has_prevote'] and not r['runoff_number'])
-        if action=='delete-competition' and u['admin']:
+        if action=='schedule':
+            if not u['admin']: abort(403,'Administrator access required.')
+            edit_round_schedule(c,r,payload)
+        elif action=='delete-competition' and u['admin']:
             # Legacy SQLite tables do not have cascading foreign keys.
             for table in ['print_links','winners','entries','participants','votes','topics','poll_ballots']:
                 c.execute('DELETE FROM '+table+' WHERE round_id=?',(rid,))
@@ -469,6 +536,78 @@ def delete_print_link(lid):
     with db() as c:
         if c.execute('DELETE FROM print_links WHERE id=? AND user_id=?',(lid,user()['id'])).rowcount!=1:
             abort(403, 'You can only remove your own print links.')
+    return jsonify(ok=True)
+
+SHOPPING_STORES = {
+    'us.store.bambulab.com':'bambu', 'bambulab-us.myshopify.com':'bambu',
+    'shop.polymaker.com':'polymaker', 'store.sunlu.com':'sunlu',
+}
+
+def shopping_integer(value, maximum, label):
+    text = str(value)
+    if not re.fullmatch(r'[0-9]{1,16}', text) or not 1 <= int(text) <= maximum:
+        abort(400, f'Use a whole number from 1 to {maximum} for {label}.')
+    return int(text)
+
+def shopping_deadline(payload):
+    if not payload.get('deadline'): return None
+    cutoff = timestamp(payload['deadline'], 'shopping deadline')
+    if cutoff <= time.time(): abort(400, 'Choose a shopping deadline in the future.')
+    return cutoff
+
+@app.post('/api/shopping')
+@protected()
+def create_shopping_spree():
+    payload = request.get_json(silent=True) or {}
+    vendor = field('vendor',20)
+    if vendor not in SHOPPING_STORES.values(): abort(400,'Choose a filament store.')
+    with db() as c:
+        rid = c.execute('INSERT INTO shopping_sprees(creator_id,title,vendor,target,deadline) VALUES(?,?,?,?,?)',
+                        (user()['id'],field('title',120),vendor,shopping_integer(payload.get('target'),10000,'target rolls'),
+                         shopping_deadline(payload))).lastrowid
+    return jsonify(id=rid)
+
+@app.post('/api/shopping/<int:rid>/<action>')
+@protected()
+def shopping_action(rid,action):
+    uid = user()['id']
+    payload = request.get_json(silent=True) or {}
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        now = time.time()
+        c.execute("UPDATE shopping_sprees SET status='closed',closed_at=deadline WHERE id=? AND status='open' AND deadline<=?", (rid,now))
+        spree = c.execute('SELECT * FROM shopping_sprees WHERE id=?',(rid,)).fetchone()
+        if not spree: abort(404,'Shopping spree not found.')
+        if action == 'read' and spree['status'] != 'open':
+            c.execute('INSERT OR IGNORE INTO shopping_reads VALUES(?,?)',(rid,uid))
+        elif spree['status'] != 'open':
+            abort(409,'This shopping list is closed.')
+        elif action == 'add':
+            raw = field('url',2048)
+            try:
+                url = urlsplit(raw)
+                vendor = SHOPPING_STORES.get(url.hostname)
+                if (url.scheme != 'https' or url.username is not None or url.password is not None
+                    or url.port not in (None,443) or re.search(r'[\x00-\x20\x7f\\]',raw) or
+                    not re.search(r'(?:^|/)products/[^/]+',url.path) or vendor != spree['vendor']):
+                    raise ValueError()
+            except ValueError:
+                abort(400,'Use an HTTPS product link from this spree’s store.')
+            c.execute('INSERT INTO shopping_items(spree_id,user_id,product,url,quantity) VALUES(?,?,?,?,?)',
+                      (rid,uid,field('product'),raw,shopping_integer(payload.get('quantity'),1000,'rolls')))
+        elif action == 'remove':
+            item = shopping_integer(payload.get('item_id'),2**53-1,'item')
+            if not c.execute('DELETE FROM shopping_items WHERE id=? AND spree_id=? AND user_id=?',(item,rid,uid)).rowcount:
+                abort(404,'Your item could not be found.')
+        elif action in ('deadline','close','cancel'):
+            if uid != spree['creator_id']: abort(403,'Only the organizer can manage this spree.')
+            if action == 'deadline':
+                c.execute('UPDATE shopping_sprees SET deadline=? WHERE id=?',(shopping_deadline(payload),rid))
+            else:
+                c.execute('UPDATE shopping_sprees SET status=?,closed_at=? WHERE id=?',
+                          ('closed' if action == 'close' else 'cancelled',now,rid))
+        else:
+            abort(404,'Unknown shopping operation.')
     return jsonify(ok=True)
 
 @app.post('/api/features')

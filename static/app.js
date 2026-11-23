@@ -51,10 +51,109 @@ function tally(id){const wins=winsFor(id);return `<div class="tally" aria-label=
 function recoveryPanel(){return s.capabilities?.recovery&&s.user.has_password?`<section class="card"><h2>Account recovery</h2><p class="muted">Save recovery codes so you can reset your password without an email address. New codes replace the old set.</p>${form('profile/recovery-codes','<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label><button>Generate recovery codes</button>')}<pre id="recovery-codes" class="recovery-codes" hidden></pre></section>`:'';}
 function profile(){return `<a class="back-link" href="#">← Back to the fleet</a><div class="section-heading"><div><p class="eyebrow">YOUR PLACE IN THE CREW</p><h1 class="page-title">Your profile</h1></div></div><div class="profile-grid"><aside class="card profile-card">${avatar(s.user)}<h2>${esc(s.user.display_name||s.user.name)}</h2><p class="muted">${s.user.name?'@'+esc(s.user.name):'Google sign-in'}</p><span class="badge">${s.user.admin?'Admin':'Crew member'}</span>${s.capabilities?.avatars===false?'<p class="muted small">Photo uploads are being migrated.</p>':form('profile/avatar','<label>Profile photo<input type="file" name="file" accept="image/jpeg,image/png,image/webp" required><small>JPEG, PNG, or WebP · up to 2 MB and 16 megapixels. Cropped to a 512 × 512 square.</small></label><button>Upload photo</button>')}<h3>Your trophy shelf</h3>${tally(s.user.id)}<p class="muted small">One trophy for each category won in a completed round.</p></aside><div><section class="card"><p class="eyebrow">CREW DETAILS</p><h2>What should we call you?</h2><p class="muted">Your display name appears on entries and the trophy shelf.</p>${form('profile',`<label>Display name<input name="display_name" value="${esc(s.user.display_name||s.user.name)}" maxlength="80" autocomplete="nickname" required></label><button>Save profile</button>`)}</section><section class="card"><p class="eyebrow">SIGN-IN DETAILS</p><h2>${s.user.has_password?'Username & password':'Add a password'}</h2><p class="muted">${s.user.has_password?'Use your current password to update your sign-in details. Other sessions will be signed out.':'Add a username and password to this account so you can also sign in without Google. A recent Google sign-in is required.'}</p>${form('profile/credentials',`<label>Username<input name="name" value="${esc(s.user.name)}" maxlength="40" autocomplete="username" data-check-username required><small class="username-status" aria-live="polite">Usernames are not case-sensitive.</small></label>${s.user.has_password?'<label>Current password<input name="current_password" type="password" autocomplete="current-password" required></label>':''}<label>New password<input name="password" type="password" minlength="6" maxlength="256" autocomplete="new-password" placeholder="At least 6 characters" required></label><label>Confirm new password<input name="confirm_password" type="password" minlength="6" maxlength="256" autocomplete="new-password" required></label><button>${s.user.has_password?'Update sign-in details':'Add username & password'}</button>`)}</section></div></div>`;}
 const boardStages=[['ideas','On the horizon','Ideas & possibilities'],['progress','Under way','In progress'],['review','At the dock','In review']];
-function featuresPage(){return `<div class="section-heading"><div><p class="eyebrow">A COURSE WE CHART TOGETHER</p><h1 class="page-title">What’s on the horizon?</h1><p class="muted">Bring an idea aboard. Follow it from a first thought to its final checks.</p></div><span class="section-number">⚓</span></div><details class="card idea-compose"><summary>+ Float an idea</summary>${form('features','<label>Your idea<input name="title" maxlength="120" placeholder="What would make the league better?" required></label><label>A little more detail<textarea name="description" maxlength="1000" rows="3" placeholder="How would it help the crew?"></textarea></label><button>Add to the horizon</button>')}<p class="muted small">Everyone can suggest ideas. Admins move them as work progresses.</p></details><div class="feature-board">${boardStages.map(([stage,title,subtitle],index)=>{
+function featuresPage(){return `<div class="section-heading"><div><h2>Feature requests</h2></div></div><details class="card idea-compose"><summary>+ Float an idea</summary>${form('features','<label>Your idea<input name="title" maxlength="120" placeholder="What would make the league better?" required></label><label>A little more detail<textarea name="description" maxlength="1000" rows="3" placeholder="How would it help the crew?"></textarea></label><button>Add to the horizon</button>')}<p class="muted small">Everyone can suggest ideas. Admins move them as work progresses.</p></details><div class="feature-board">${boardStages.map(([stage,title,subtitle],index)=>{
  const ideas=(s.feature_ideas||[]).filter(i=>i.stage===stage);
  return `<section class="board-lane lane-${stage}" aria-labelledby="lane-${stage}"><header><span class="lane-number">0${index+1}</span><div><h2 id="lane-${stage}">${title}</h2><p>${subtitle}</p></div><span class="lane-count">${ideas.length}</span></header><div class="lane-cards">${ideas.map(i=>`<article class="idea-card"><h3>${esc(i.title)}</h3>${i.description?`<p class="idea-description">${esc(i.description)}</p>`:''}<p class="idea-author">Floated by ${i.user_id?name(i.user_id):'Print League'}</p>${s.user.admin?form(`features/${i.id}/move`,`<label>Move to<select name="stage">${boardStages.map(([key,label])=>`<option value="${key}" ${stage===key?'selected':''}>${label}</option>`).join('')}</select></label><button>Move</button>`):''}${s.user.admin||(i.user_id===s.user.id&&stage==='ideas')?form(`features/${i.id}/delete`,'<button class="quiet-button">Remove idea</button>'):''}</article>`).join('')||`<div class="lane-empty"><span>${index===0?'✧':index===1?'≈':'⚓'}</span><p>${index===0?'Room for the next bright idea.':index===1?'Nothing under way just yet.':'Features in review go here.'}</p></div>`}</div></section>`;
  }).join('')}</div>`;}
+function helpPage(){
+ const sections=[
+  ['Home','#','Suggest a topic and vote for the ones you like. Choose whether you’re participating, then submit your print title by the printing deadline. Judging happens in person.'],
+  ['Winners','#winners','Browse trophies and completed competitions. If you participated in an awarded competition, share a model link on its card.'],
+  ...(s.shopping?[['Shopping','#shopping','Start a group buy or add your picks to an open spree. Choose a featured filament or paste a product link from the store. Enter the exact variant and how many rolls you want. The organizer can set a deadline, close the list, or cancel.']]:[]),
+  ['Profile','#profile','Update your display name, photo, and sign-in details from Settings → Profile.'],
+  ['Credits','#credits','Find artwork and model attributions in Settings → Credits.']
+ ];
+ if(s.user.admin)sections.push(['Admin',s.capabilities?.admin_management?'#admin':'#','Create competitions and edit stage deadlines from the competition card on Home. Use the organizer controls to move the competition forward and record awards.']);
+ return `<div class="section-heading"><h1 class="page-title">Help</h1></div><div class="help-grid">${sections.map(([label,href,description])=>`<section class="card"><h2><a href="${href}">${label}</a></h2><p>${description}</p></section>`).join('')}<section class="card"><h2>Changelog</h2><p>Click the version number below Print League in the header to open the release history.</p></section></div>${featuresPage()}`;
+}
+const filamentStores={
+ bambu:['Bambu Lab','https://bambulab-us.myshopify.com/collections/bambu-filament-bundle-discount',[
+  ['PLA Basic','https://bambulab-us.myshopify.com/products/pla-basic-filament'],
+  ['PLA Matte','https://bambulab-us.myshopify.com/products/pla-matte'],
+  ['PETG Translucent','https://bambulab-us.myshopify.com/products/petg-translucent']
+ ]],
+ polymaker:['Polymaker','https://shop.polymaker.com/pages/polymaker-bundle-builder',[
+  ['Panchroma Basic PLA','https://shop.polymaker.com/products/panchroma-pla'],
+  ['Panchroma Matte PLA','https://shop.polymaker.com/products/matte-pla']
+ ]],
+ sunlu:['SUNLU','https://store.sunlu.com/collections/general-filaments',[
+  ['PETG','https://store.sunlu.com/collections/general-filaments/products/over-6kg-bundle-sale-petg-3d-printer-filament-1-75mm-1kg-roll'],
+  ['PLA+','https://store.sunlu.com/collections/general-filaments/products/over-6kg-bundle-sale-pla-and-pla-plus-pla-meta-macaron-filament1kg-roll']
+ ]]
+};
+const shoppingRoute=()=>/^#shopping(?:\/(\d+))?$/.exec(location.hash);
+function dateInput(name,label,value,required=false){
+ const time=typeof value==='number'?value*1000:Date.parse(value?.length===10?value+'T23:59:59Z':value);
+ const local=new Date(time);
+ const formatted=Number.isFinite(time)?new Date(time-local.getTimezoneOffset()*60000).toISOString().slice(0,19):'';
+ return `<label>${label}<input type="datetime-local" name="${name}" value="${formatted}" step="1" ${required?'required':''}></label>`;
+}
+function roundSchedule(r){
+ if(!s.user.admin||r.phase==='completed')return '';
+ const fields=r.phase==='judging'?dateInput('judging_ends_at','In-person judging ends (optional)',r.judging_ends_at):
+  (r.phase==='submissions'?dateInput('vote_opens_at','Topic collection ends (optional)',r.vote_opens_at):'')+
+  (['submissions','topics'].includes(r.phase)?dateInput('votes_close_at',r.runoff_number?'Tiebreaker voting ends (optional)':'Topic voting ends (optional)',r.votes_close_at):'')+
+  dateInput('deadline','Printing ends',r.deadline,true);
+ return `<details class="round-schedule"><summary>Edit stage deadlines</summary>${form(`rounds/${r.id}/schedule`,
+  `<input type="hidden" name="phase" value="${esc(r.phase)}"><input type="hidden" name="ballot" value="${r.runoff_number||0}">${fields}`+btn('Save deadlines'))}
+  <small>Times use your local timezone. ${r.phase==='judging'?'Record awards, then complete the competition from this card.':['submissions','topics'].includes(r.phase)?'Leave a collection or voting date blank for manual advancement.':''}</small></details>`;
+}
+const shoppingStatus={open:'Accepting picks',closed:'Adding ended',cancelled:'Cancelled'};
+function shoppingNotices(){
+ if(!s.shopping?.unread.length)return '';
+ const notices=s.shopping.sprees.filter(spree=>s.shopping.unread.includes(spree.id));
+ return `<section class="card shopping-notices"><h2>Shopping updates</h2>${notices.map(spree=>`<div class="row">
+ <span><a href="#shopping/${spree.id}">${esc(spree.title)}</a> · ${shoppingStatus[spree.status]}</span>${form(`shopping/${spree.id}/read`,`<button type="submit" aria-label="Dismiss update for ${esc(spree.title)}">Dismiss</button>`)}</div>`).join('')}</section>`;
+}
+function shoppingProgress(spree,items){
+ const rolls=items.reduce((total,item)=>total+item.quantity,0);
+ return `<div class="shopping-meter"><strong>${rolls} / ${spree.target} rolls</strong>${rolls>=spree.target?'<span class="shopping-status">Target reached</span>':''}
+ <progress aria-label="Rolls toward the group target" value="${Math.min(rolls,spree.target)}" max="${spree.target}"></progress></div>`;
+}
+function shoppingSpree(spree){
+ const items=s.shopping.items.filter(item=>item.spree_id===spree.id);
+ const [store,storeURL,catalog]=filamentStores[spree.vendor];
+ const open=spree.status==='open',base=`shopping/${spree.id}/`;
+ const organizer=open&&spree.creator_id===s.user.id;
+ return `<a class="back-link" href="#shopping">← All shopping sprees</a><article class="card shopping-spree">
+ <header><h1 class="page-title">${esc(spree.title)}</h1><p>${shoppingStatus[spree.status]} · Organized by ${name(spree.creator_id)}</p></header>
+ <p><a href="${storeURL}" target="_blank" rel="noopener noreferrer">Browse ${store} ↗</a>${open?(spree.deadline?' · Adding ends '+esc(dateLabel(spree.deadline)):' · Open until the organizer closes it'):''}</p>
+ ${shoppingProgress(spree,items)}
+ <h2>Crew picks</h2>
+ ${items.length?`<ul class="shopping-list">${items.map(item=>`<li class="shopping-item"><div><a href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">${esc(item.product)}</a><p class="muted small">${item.quantity} ${item.quantity===1?'roll':'rolls'} · ${name(item.user_id)}</p></div>
+ ${open&&item.user_id===s.user.id?form(base+'remove',`<input type="hidden" name="item_id" value="${item.id}"><button class="quiet-button">Remove</button>`):''}</li>`).join('')}</ul>`:'<p class="muted">No filament has been added yet.</p>'}
+ ${open?`<details><summary>Add filament</summary>${form(base+'add',`
+ <div class="filament-picker"><label>Choose a filament<select data-filament-picker><option value="">Paste a store link</option>
+ ${catalog.map(([label,url])=>`<option value="${url}">${label}</option>`).join('')}</select></label>
+ <a data-filament-link target="_blank" rel="noopener noreferrer" hidden>View colors and variants ↗</a></div>
+ <label>Product link<input type="url" name="url" maxlength="2048" required></label>
+ <label>Filament name<input name="product" placeholder="PLA Basic" maxlength="100" required></label>
+ <label>Variant<input name="variant" placeholder="Jade White · 1 kg refill" maxlength="55" required></label>
+ <label>Rolls<input type="number" name="quantity" min="1" max="1000" value="1" required></label>`+btn('Add to the list'))}</details>`:''}
+ ${organizer?`<details class="round-schedule"><summary>Manage spree</summary>${form(base+'deadline',dateInput('deadline','Shopping deadline (optional)',spree.deadline)+btn('Save deadline'))}
+ <div class="shopping-organizer-actions">${form(base+'close',btn('End adding'))}${form(base+'cancel','<button class="danger-button">Cancel spree</button>')}</div></details>`:''}
+ </article>${shoppingNotices()}`;
+}
+function shoppingPage(route){
+ if(!s.shopping)return '<section class="card"><h1>Shopping</h1><p>Shopping is currently unavailable.</p></section>';
+ if(route[1]){
+  const spree=s.shopping.sprees.find(spree=>String(spree.id)===route[1]);
+  return spree?shoppingSpree(spree):'<section class="card"><h1>Shopping spree not found</h1><a href="#shopping">All shopping sprees</a></section>';
+ }
+ return `<header class="shopping-header"><h1 class="page-title"><span class="shopping-spool" aria-hidden="true"></span>Filament shopping</h1><p class="muted">Pool the crew’s filament picks for a bulk order.</p></header>
+ ${shoppingNotices()}<details class="card"><summary>Start a shopping spree</summary>
+ <p class="muted small">Pick a store and set a roll target from its offer. The organizer checks pricing and places the order at the store.</p>
+ ${form('shopping',`<label>Spree name<input name="title" maxlength="120" required></label>
+ <label>Store<select name="vendor">${Object.entries(filamentStores).map(([key,[store]])=>`<option value="${key}">${store}</option>`).join('')}</select></label>
+ <label>Target rolls<input type="number" name="target" min="1" max="10000" required></label>
+ ${dateInput('deadline','Shopping deadline (optional)',null)}`+btn('Start spree'))}
+ <p class="small">${Object.values(filamentStores).map(([store,url])=>`<a href="${url}" target="_blank" rel="noopener noreferrer">${store} offers ↗</a>`).join(' · ')}</p></details>
+ <div class="shopping-grid">${s.shopping.sprees.map(spree=>`<article class="card shopping-spree">
+ <span class="badge">${shoppingStatus[spree.status]}</span><h2><a href="#shopping/${spree.id}">${esc(spree.title)}</a></h2>
+ <p class="muted small">${filamentStores[spree.vendor][0]} · ${name(spree.creator_id)}</p>
+ ${shoppingProgress(spree,s.shopping.items.filter(item=>item.spree_id===spree.id))}
+ </article>`).join('')||'<p class="muted">No shopping sprees yet.</p>'}</div>`;
+}
 function changelogPage(){return `<div class="section-heading"><div><p class="eyebrow">VERSION HISTORY</p><h1 class="page-title">Changelog</h1><p class="muted">Updates and improvements to Print League.</p></div><span class="log-symbol">≈</span></div><div class="release-log">${(s.releases||[]).map((release,index)=>`<article class="release-entry"><div class="release-marker"><span>v${esc(release.version)}</span><small>${esc(release.voyage)}</small></div><div class="card release-card"><p class="eyebrow">${index===0?'CURRENT RELEASE':'PREVIOUS RELEASE'}</p><h2>${esc(release.title)}</h2><p>${esc(release.summary)}</p>${release.changes?.length?`<ul>${release.changes.map(change=>`<li>${esc(change)}</li>`).join('')}</ul>`:''}</div></article>`).join('')}</div>`;}
 function creditsPage(){
  return `<div class="section-heading"><div><p class="eyebrow">THE PEOPLE & IDEAS BEHIND IT</p><h1 class="page-title">Credits</h1><p class="muted">A little inspiration for a crew of makers.</p></div></div>
@@ -135,7 +234,7 @@ async function hydrateGoogle(){
   window.google.accounts.id.initialize({client_id:challenge.client_id,nonce:challenge.nonce,auto_select:false,ux_mode:'popup',use_fedcm_for_button:true,callback:async response=>{
    const f=forms.find(form=>form.dataset.google===response.state);if(!f||!f.isConnected||!f.reportValidity())return;
    const body=Object.fromEntries(new FormData(f));body.mode=f.dataset.google;if(body.mode==='register')body.username_mode=body.name?.trim()?'custom':'gmail';
-   try{await post('auth/google',{...body,challenge:challenge.challenge,credential:response.credential});googleChallenge=null;if(body.mode!=='link')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
+   try{await post('auth/google',{...body,challenge:challenge.challenge,credential:response.credential});googleChallenge=null;if(body.mode==='register')location.hash='';await load();document.querySelector('#message').textContent=body.mode==='link'?'Google account linked.':'Signed in.';}
    catch(error){
     const feedback=body.mode==='login'?document.querySelector('#signin-feedback'):document.querySelector('#message');
     feedback.textContent=error.message;
@@ -188,22 +287,40 @@ function renderContent(){
  document.querySelector('#page-tabs').hidden=!s.user;
  document.querySelector('#tab-home').setAttribute('aria-current',location.hash===''||location.hash==='#'?'page':'false');
  document.querySelector('#tab-winners').setAttribute('aria-current',location.hash==='#winners'?'page':'false');
- document.querySelector('#tab-features').setAttribute('aria-current',location.hash==='#features'?'page':'false');
- document.querySelector('#tab-changelog').setAttribute('aria-current',location.hash==='#changelog'?'page':'false');
- document.querySelector('#tab-credits').setAttribute('aria-current',location.hash==='#credits'?'page':'false');
+ const shopRoute=shoppingRoute();
+ const version=document.querySelector('#brand-version');
+ version.setAttribute('aria-current',location.hash==='#changelog'?'page':'false');
+ const help=document.querySelector('#help-link');
+ help.hidden=!s.user;help.setAttribute('aria-current',['#help','#features'].includes(location.hash)?'page':'false');
+ const shopTab=document.querySelector('#tab-shopping');
+ shopTab.hidden=!s.shopping;shopTab.setAttribute('aria-current',shopRoute?'page':'false');
+ const alert=document.querySelector('#shopping-alert');
+ const unread=s.shopping?.unread.length||0;
+ alert.hidden=!unread;alert.textContent=unread;alert.setAttribute('aria-label',`${unread} shopping updates`);
  const isProfile=s.user&&location.hash==='#profile';
  document.querySelector('#intro').hidden=true;
+ if(location.hash==='#changelog'){root.innerHTML=changelogPage();return;}
  if(!s.user){root.innerHTML=authPage();return;}
  if(isProfile){root.innerHTML=profile()+googleProfile()+recoveryPanel();return;}
  if(location.hash==='#admin'){root.innerHTML=s.user.admin?adminPage():'<section class="card"><h1>Administrator access required</h1></section>';return;}
  if(location.hash==='#credits'){root.innerHTML=creditsPage();return;}
- if(location.hash==='#features'){root.innerHTML=featuresPage();return;}
- if(location.hash==='#changelog'){root.innerHTML=changelogPage();return;}
+ if(['#help','#features'].includes(location.hash)){root.innerHTML=helpPage();return;}
+ if(shopRoute){root.innerHTML=shoppingPage(shopRoute);return;}
  if(location.hash==='#winners'){root.innerHTML=winnersPage();return;}
- root.innerHTML=`<div class="welcome"><div><p class="eyebrow">GOOD TO HAVE YOU ABOARD</p><h1 class="page-title">On the workbench</h1><p class="muted">Pick a topic, cast your vote, and make something worth sharing.</p></div></div>${s.user.admin?invitationPanel()+organizer():''}<div class="grid">${s.rounds.filter(r=>r.phase!=='completed').map(round).join('')||'<div class="empty-state"><span>≈</span><h3>Calm seas. Fresh possibilities.</h3><p>The next challenge starts when your organizer creates a competition.</p></div>'}</div>`;
+ root.innerHTML=`<div class="welcome"><div><p class="eyebrow">GOOD TO HAVE YOU ABOARD</p><h1 class="page-title">On the workbench</h1><p class="muted">Pick a topic, cast your vote, and make something worth sharing.</p></div></div>${shoppingNotices()}${s.user.admin?invitationPanel()+organizer():''}<div class="grid">${s.rounds.filter(r=>r.phase!=='completed').map(round).join('')||'<div class="empty-state"><span>≈</span><h3>Calm seas. Fresh possibilities.</h3><p>The next challenge starts when your organizer creates a competition.</p></div>'}</div>`;
  tickClocks();
 }
 
+function ballotResults(r){
+ const ballots=(s.poll_results||[]).filter(b=>b.round_id===r.id).sort((a,b)=>a.ballot_number-b.ballot_number);
+ if(!ballots.length)return '';
+ return `<section class="ballot-results"><h3>Completed vote results</h3><p class="muted small">See who voted for each topic after each ballot closes.</p>${ballots.map((b,i)=>{
+  const topics=s.topics.filter(t=>t.round_id===r.id&&(b.topic_ids||[]).includes(t.id));
+  const voters=t=>b.votes.filter(v=>v.topic_id===t.id);
+  topics.sort((a,b)=>voters(b).length-voters(a).length||a.id-b.id);
+  return `<details ${i===ballots.length-1?'open':''}><summary>${b.ballot_number?`Tiebreaker round ${b.ballot_number}`:'Initial vote'} · Complete <span class="muted">(${new Set(b.votes.map(v=>v.user_id)).size} voters)</span></summary><ul class="ballot-result-list">${topics.map(t=>`<li><div><strong>${esc(t.title)}</strong><span class="ballot-vote-total">${voters(t).length} ${voters(t).length===1?'vote':'votes'}</span></div><p>${voters(t).map(v=>name(v.user_id)).join(', ')||'No votes'}</p></li>`).join('')}</ul></details>`;
+ }).join('')}</section>`;
+}
 function round(r){
  const base=`rounds/${r.id}/`,topics=s.topics.filter(t=>t.round_id===r.id),entries=s.entries.filter(e=>e.round_id===r.id),parts=s.participants.filter(p=>p.round_id===r.id),mine=parts.find(p=>p.user_id===s.user.id),canManage=manager(r);
  const eliminated=t=>!!r.runoff_number&&!(r.runoff_topic_ids||[]).includes(t.id);
@@ -222,7 +339,7 @@ function round(r){
   if(r.phase==='judging')controls=(eligible.length&&s.user.admin?form(base+'winner',input('category','Award category')+`<select name="entry_id" aria-label="Winning entry">${eligible.map(e=>`<option value="${e.id}">${esc(e.title)} — ${name(e.user_id)}</option>`).join('')}</select>`+btn('Record winner')):`<p class="muted">${eligible.length?'An admin will record the in-person results.':'No eligible entries were submitted. You can archive this competition without awards.'}</p>`)+form(base+'advance',btn('Complete competition →'));
   if(s.user.admin)controls+=form(base+'delete-competition','<button class="danger-button">Delete competition</button>');
  }
- return `<section class="card round-card"><span class="badge">${phaseLabels[r.phase]||esc(r.phase)}</span><h2>${esc(r.title)}</h2><p class="muted">Competition ends: ${esc(dateLabel(r.deadline))}</p>
+ return `<section class="card round-card"><span class="badge">${phaseLabels[r.phase]||esc(r.phase)}</span><h2>${esc(r.title)}</h2><p class="muted">Printing ends: ${esc(dateLabel(r.deadline))}</p>
  ${r.topic?`<div class="winning-topic"><p class="eyebrow">THE CREW’S WINNING TOPIC</p><h3>${esc(r.topic)}</h3></div>`:''}
  ${['printing','judging'].includes(r.phase)?countdown(r):['submissions','topics'].includes(r.phase)?pollCountdown(r):''}
  ${r.phase==='topics'&&r.runoff_number?`<div class="ballot-progress" aria-label="Voting progress"><span class="ballot-complete">✓ Initial vote <small>Complete</small></span>${r.runoff_number>1?`<span class="ballot-complete">✓ ${r.runoff_number===2?'Tiebreaker round 1':`Tiebreaker rounds 1–${r.runoff_number-1}`} <small>Tied</small></span>`:''}<span class="ballot-current" aria-current="step">Tiebreaker round ${r.runoff_number} <small>Open · ${topics.filter(t=>!eliminated(t)).length} eligible topics</small></span></div><h3 class="ballot-heading">Choose from the tied topics</h3><p class="muted small">Original topics stay listed below. Crossed-out topics are no longer eligible.</p>`:''}
@@ -233,6 +350,8 @@ function round(r){
  ${r.phase==='no_topics'?'<p class="phase-note">The poll closed without any topics. There is no winning topic.</p>':''}
  ${r.phase==='judging'?'<p class="phase-note">Submissions are closed. Voting happens in person; an admin will record the winners here.</p>':''}
  ${['submissions','topics','tie'].includes(r.phase)?`<div class="topic-list">${topics.map(t=>`<div class="row${eliminated(t)?' topic-eliminated':''}"><span><strong>${eliminated(t)?`<span aria-hidden="true">× </span><s>${esc(t.title)}</s>`:esc(t.title)}</strong>${r.runoff_number?`<span class="topic-status">${eliminated(t)?'Eliminated · Not eligible':'Eligible for this tiebreaker'}</span>`:''}<br><small>${t.user_id?`Suggested by ${name(t.user_id)}`:''}${r.phase==='submissions'?' · Voting opens later':''}</small></span><div class="topic-actions">${r.phase==='topics'&&!eliminated(t)?form(base+'vote',`<input type="hidden" name="topic_id" value="${t.id}">`+`<button ${s.votes.some(v=>v.topic_id===t.id&&v.user_id===s.user.id)?'aria-pressed="true" aria-label="Undo vote for this topic"':'aria-pressed="false"'}>${s.votes.some(v=>v.topic_id===t.id&&v.user_id===s.user.id)?'✓ Voted · Undo':'Vote'}</button>`):''}${collecting&&t.user_id===s.user.id&&!s.votes.some(v=>v.topic_id===t.id&&v.round_id===r.id)?form(base+'delete-topic',`<input type="hidden" name="topic_id" value="${t.id}"><button class="quiet-button" aria-label="Delete topic: ${esc(t.title)}">Delete</button>`):''}</div></div>`).join('')||'<p class="muted">No topics yet. Bring the first idea aboard.</p>'}</div>`:''}
+ ${r.phase==='judging'&&r.judging_ends_at?`<p class="phase-note">In-person judging ends ${esc(dateLabel(r.judging_ends_at))}</p>`:''}
+ ${ballotResults(r)}
  ${collecting?form(base+'topic',input('title','Suggest a topic')+btn('Add topic')):''}
  ${['submissions','topics','tie','printing'].includes(r.phase)&&deadlineMs(r)>Date.now()+serverOffset?form(base+'participate',`<label>Are you participating?<select name="status" aria-label="Are you participating?" required><option value="" disabled ${!mine?'selected':''}>Choose Yes or No</option><option value="in" ${mine?.status==='in'?'selected':''}>Yes</option><option value="out" ${mine?.status==='out'?'selected':''}>No</option></select></label>`+btn('Save participation')):''}
  <details class="crew-details"><summary>The crew · ${parts.filter(p=>p.status==='in').length} participating</summary><p><small>Participating: ${parts.filter(p=>p.status==='in').map(p=>name(p.user_id)).join(', ')||'No one yet'}<br>Sitting out: ${parts.filter(p=>p.status==='out').map(p=>name(p.user_id)).join(', ')||'No one'}<br>Not responded: ${s.users.filter(u=>!parts.some(p=>p.user_id===u.id)).map(u=>name(u.id)).join(', ')||'Everyone has responded'}</small></p></details>
@@ -240,6 +359,7 @@ function round(r){
  ${entries.map(e=>`<div class="row"><span><strong>${esc(e.title)}</strong><br><small>by ${name(e.user_id)}</small></span></div>`).join('')}
  ${s.winners.filter(w=>w.round_id===r.id).map(w=>{const e=entries.find(e=>e.id===w.entry_id);return e?`<div class="award">${trophyImage}<strong>${esc(w.category)}</strong><br>${name(e.user_id)} · ${esc(e.title)}</div>`:'';}).join('')}
  ${printLinks(r,mine)}
+ ${roundSchedule(r)}
  ${controls?`<div class="round-controls"><p class="eyebrow">ORGANIZER CONTROLS</p>${controls}</div>`:''}</section>`;
 }
 root.addEventListener('submit',async e=>{
@@ -248,12 +368,22 @@ root.addEventListener('submit',async e=>{
   if(f.hasAttribute('data-invite-gate')){await checkInvitation(f.elements.invite.value);return;}
   if(f.dataset.google)return;
   const d=new FormData(f);
+  if(d.has('variant')){
+   const product=d.get('product').trim(),variant=d.get('variant').trim();
+   if(!product||!variant)throw Error('Enter the filament name and variant.');
+   d.set('product',product+' · '+variant);
+   d.delete('variant');
+  }
   f.querySelectorAll('input[type="datetime-local"]').forEach(field=>{if(field.value&&!field.disabled)d.set(field.name,new Date(field.value).toISOString());});
   if(f.dataset.path==='profile/avatar'&&d.get('file')?.size>2*1024*1024)throw Error('Profile photos must be 2 MB or smaller.');
   if(['admin/demote','admin/reset-password'].includes(f.dataset.path)&&!window.confirm(f.dataset.path==='admin/demote'?'Remove admin access from this member?':'Generate a temporary password for this member? Any previous temporary password will stop working.'))return;
   if(/^admin\/invitations\/\d+\/revoke$/.test(f.dataset.path)&&!window.confirm('Revoke this invitation? Its code and signup link will stop accepting new members. Existing accounts will not be affected.'))return;
   if(f.dataset.path.endsWith('/delete-competition')&&!window.confirm('Permanently delete “'+f.closest('.round-card').querySelector('h2').textContent+'” and all its topics, votes, entries, results and print links? This cannot be undone.'))return;
+  if(/^shopping\/\d+\/(close|cancel)$/.test(f.dataset.path)&&!window.confirm(
+   f.dataset.path.endsWith('/close')?'End adding and let participants know the list is ready?':'Cancel this spree and let participants know?'
+  ))return;
   const out=await post(f.dataset.path,f.querySelector('[type=file]')?d:Object.fromEntries(d));
+  if(f.dataset.path==='shopping')history.pushState(null,'','#shopping/'+out.id);
   await load();document.querySelector('#message').textContent='Saved.';
   if(f.dataset.path==='auth/reset-password')document.querySelector('#message').textContent='Password changed. Sign in with your new password.';
   if(out.temporary_password){const target=document.querySelector('#temporary-password');target.hidden=false;target.replaceChildren();const note=document.createElement('p');note.textContent='Temporary password for member #'+d.get('member_id')+'. Copy and share privately. It works once and expires in 24 hours. On the sign-in page, choose “Have a temporary password from an admin?” to set a new password.';const field=document.createElement('input');field.readOnly=true;field.value=out.temporary_password;field.setAttribute('aria-label','Temporary password');target.append(note,field);}
@@ -269,6 +399,13 @@ root.addEventListener('click',e=>{
 root.addEventListener('click',e=>{const page=e.target.closest('[data-page]');if(page&&!page.disabled){archivePage=Number(page.dataset.page);render();}});
 root.addEventListener('change',e=>{
  if(e.target.form)e.target.form.dataset.dirty='true';
+ if(e.target.matches('[data-filament-picker]')){
+  const picker=e.target,form=picker.form,link=form.querySelector('[data-filament-link]');
+  form.elements.url.value=picker.value;
+  form.elements.product.value=picker.value?picker.selectedOptions[0].textContent:'';
+  link.hidden=!picker.value;
+  if(picker.value)link.href=picker.value;
+ }
  if(e.target.name==='prevote'){
   const field=e.target.form.elements.vote_opens_at;field.disabled=!e.target.checked;field.closest('label').hidden=!e.target.checked;if(!e.target.checked)field.value='';
  }
@@ -276,7 +413,7 @@ root.addEventListener('change',e=>{
 document.querySelector('#logout').onclick=async()=>{try{await post('auth/logout',{});joinState={code:'',verified:false,googleAllowed:true,method:'password'};lastInviteLink='';document.querySelector('#settings').open=false;location.hash='';await load();document.querySelector('#message').textContent='Signed out.';}catch(err){document.querySelector('#message').textContent=err.message;}};
 window.addEventListener('hashchange',()=>{document.querySelector('#settings').open=false;document.querySelector('#message').textContent='';if(s){if(location.hash==='#admin')load().catch(e=>document.querySelector('#message').textContent=e.message);else render();}});
 document.addEventListener('click',e=>{if(!e.target.closest('#settings'))document.querySelector('#settings').open=false;});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'){document.querySelector('#settings').open=false;document.querySelector('#settings summary').focus();}});
+document.addEventListener('keydown',e=>{const settings=document.querySelector('#settings');if(e.key==='Escape'&&settings.open){settings.open=false;document.querySelector('#settings summary').focus();}});
 let availabilityTimer;
 root.addEventListener('input',e=>{
  if(e.target.form)e.target.form.dataset.dirty='true';

@@ -1,4 +1,10 @@
 import {APIError} from './validation.mjs';
+export function postgresTransaction(sql) {
+ if(!sql)return null;
+ return run=>sql.begin(transaction=>run(
+  (statement,params=[])=>transaction.unsafe(statement,params)
+ ));
+}
 export function database(url,key,transport=fetch,rpcName='league_rpc') {
  if(!url||!key) return null;
  return async (operation,payload={},session_hash='') => {

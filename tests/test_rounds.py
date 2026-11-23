@@ -19,7 +19,8 @@ class Rounds(unittest.TestCase):
 
     def clear(self):
         with db() as c:
-            for table in ['print_links','feature_ideas','winners','entries','participants','votes','topics','rounds','invites','users']:
+            for table in ['shopping_reads','shopping_items','shopping_sprees','print_links','feature_ideas',
+                          'winners','entries','participants','votes','topics','rounds','invites','users']:
                 c.execute('DELETE FROM '+table)
 
     def tearDown(self):
@@ -187,9 +188,31 @@ class Rounds(unittest.TestCase):
         self.assertEqual(self.post(self.maker,f"features/{idea['id']}/delete",{}).status_code,200)
 
     def test_release_log_starts_with_initial_build(self):
-        release=self.host.get('/api/state').json['releases'][0]
+        release=self.host.get('/api/state').json['releases'][-1]
         self.assertEqual(release['version'],'0.0.0')
         self.assertEqual(release['title'],'Initial Build')
+
+    def test_schedule_edit_and_shopping_expiry(self):
+        self.create(vote_opens_at=self.iso(60),votes_close_at=self.iso(120))
+        updated={'phase':'submissions','ballot':0,'vote_opens_at':self.iso(180),
+                 'votes_close_at':self.iso(240),'deadline':self.iso(7200)}
+        self.assertEqual(self.post(self.maker,'rounds/1/schedule',updated).status_code,403)
+        self.assertEqual(self.post(self.host,'rounds/1/schedule',updated).status_code,200)
+        self.assertEqual(self.state()['vote_opens_at'],self.now+180)
+
+        spree=self.post(self.maker,'shopping',{'title':'Bulk run','vendor':'sunlu','target':6,'deadline':self.iso(60)})
+        self.assertEqual(spree.status_code,200)
+        base=f"shopping/{spree.json['id']}/"
+        pick={'product':'PETG · Black','quantity':2,'url':'https://store.sunlu.com/products/filament'}
+        self.assertEqual(self.post(self.other,base+'add',pick).status_code,200)
+        self.assertEqual(self.post(self.host,base+'cancel',{}).status_code,403)
+        with patch('app.time.time',return_value=self.now+60):
+            self.assertEqual(self.post(self.other,base+'add',pick).status_code,409)
+            shopping=self.other.get('/api/state').json['shopping']
+            self.assertEqual(shopping['unread'],[spree.json['id']])
+            self.assertEqual(shopping['sprees'][0]['status'],'closed')
+            self.assertEqual(self.post(self.other,base+'read',{}).status_code,200)
+            self.assertEqual(self.other.get('/api/state').json['shopping']['unread'],[])
 
     def test_multiple_topics_and_votes_and_admin_deletion(self):
         rid=self.create()

@@ -160,3 +160,32 @@ test('deadline catch-up, ties, rate limits, reserved admin invitation and one-us
   await db.exec('set role authenticated');await assert.rejects(db.query("select public.league_rpc('credentials','{}','')"),/permission denied/);await db.exec('reset role');
  } finally {await db.close();}
 });
+
+test('native and legacy league implementations share existing accounts, sessions and league updates',async()=>{
+ const {db,rpc,legacyRPC}=await testDatabase();
+ const [invite,legacySession,nativeSession,recovery]=Array.from({length:4},token);
+ const passwordHash=await hashPassword(pass);
+ try {
+  await db.query(`insert into league_private.invites(token_hash,expires_at,grants_admin)
+   values($1,now()+interval '1 day',true)`,[invite]);
+  await legacyRPC('register',{name:'Existing captain',normalized:'existing captain',hash:passwordHash,
+   invite_hash:invite,token_hash:legacySession});
+  const legacyState=await legacyRPC('state',{},legacySession);
+  const userId=legacyState.user.id;
+  await db.query("insert into league_private.identities values($1,'google','existing-google-subject')",[userId]);
+  await db.query('insert into league_private.recovery_codes(member_id,token_hash) values($1,$2)',[userId,recovery]);
+
+  const nativeState=await rpc('state',{},legacySession);
+  assert.deepEqual({...nativeState,server_now:0},{...legacyState,server_now:0});
+  assert.deepEqual(await rpc('credentials',{normalized:'existing captain'}),{id:userId,hash:passwordHash});
+  await rpc('rounds',{title:'Native round',deadline:new Date(Date.now()+3600000).toISOString()},legacySession);
+  assert.equal((await legacyRPC('state',{},legacySession)).rounds[0].title,'Native round');
+
+  await rpc('recover',{normalized:'existing captain',hash:passwordHash,recovery_hash:recovery,token_hash:nativeSession});
+  await assert.rejects(legacyRPC('state',{},legacySession),/sign in again/i);
+  assert.equal((await legacyRPC('state',{},nativeSession)).user.id,userId);
+  assert.equal((await db.query("select subject from league_private.identities where member_id=$1",[userId])).rows[0].subject,'existing-google-subject');
+  await assert.rejects(legacyRPC('recover',{normalized:'existing captain',hash:passwordHash,
+   recovery_hash:recovery,token_hash:token()}),/Invalid username or recovery code/);
+ }finally{await db.close();}
+});

@@ -161,3 +161,14 @@ test('tiebreaker preserves eliminated topics without voting controls and labels 
  const next=run("round({id:3,title:'Poll',phase:'topics',runoff_number:3,runoff_topic_ids:[1],deadline:'2027-01-01T12:00:00Z'})");
  assert.match(next,/Tiebreaker rounds 1–2/);assert.match(next,/Tiebreaker round 3/);
 });
+
+test('completed ballot results show voter names, zero votes and distinct rounds',()=>{
+ const {run}=ui();
+ run(`s.topics=[{id:1,round_id:3,title:'Puzzle'},{id:2,round_id:3,title:'Lamp'},{id:3,round_id:4,title:'Other competition'}];
+ s.poll_results=[{round_id:3,ballot_number:0,topic_ids:[1,2],votes:[{topic_id:1,user_id:1}]},{round_id:3,ballot_number:1,topic_ids:[1],votes:[{topic_id:1,user_id:2}]}]`);
+ const html=run('ballotResults({id:3})');
+ assert.match(html,/Initial vote · Complete/);assert.match(html,/Tiebreaker round 1 · Complete/);
+ assert.match(html,/&lt;Captain&gt;/);assert.match(html,/mate/);assert.match(html,/No votes/);
+ assert.doesNotMatch(html,/Other competition|<Captain>/);
+ assert.equal(run('ballotResults({id:4})'),'');
+});

@@ -149,3 +149,6 @@ body.signed-out{min-height:100dvh;display:flex;flex-direction:column;padding-bot
 button.danger-button{background:transparent;color:#a43b2e;border-color:#c88c83}button.danger-button:hover{background:#a43b2e;color:white}.topic-actions button:disabled{cursor:default}
 
 .invitation-panel form label{flex:1 1 190px}.invitation-item{border-top:1px solid var(--line);padding:16px 0}.invitation-item summary{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}.invitation-item summary span{color:var(--muted);font-size:12px}.invitation-item form{gap:12px}.invitation-item label{flex:1 1 180px}
+
+.header-actions{display:flex;align-items:center;gap:8px}
+@media(max-width:480px){.header-actions{gap:4px}.help-link{padding:0 6px}}
